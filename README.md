@@ -6,11 +6,27 @@
 
 ## 运行
 
+**方式一：双击启动（macOS）**
+
+双击 `Claude Session Viewer.command`，终端会自动拉起 server 并打开浏览器。
+
+**方式二：命令行**
+
 ```bash
 python3 server.py
 ```
 
 浏览器会自动打开 `http://localhost:8080`。未检测到 `~/.claude` 时，可在页面上手动输入路径。
+
+### 权限报错怎么办
+
+首次双击 `.command` 可能遇到两类报错：
+
+- **"无法打开，因为无法验证开发者"**：右键 → 打开 → 再次确认「打开」；或在 *系统设置 → 隐私与安全性* 里点「仍要打开」。
+- **"Permission denied"**：该文件缺少执行权限，在目录下执行：
+  ```bash
+  chmod +x "Claude Session Viewer.command"
+  ```
 
 ## 功能
 
