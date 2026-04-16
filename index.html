@@ -1,0 +1,1607 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Session Viewer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #1a1a2e;
+  --bg-sidebar: #16213e;
+  --bg-card: #0f3460;
+  --bg-user: #533483;
+  --bg-assistant: #1a1a3e;
+  --bg-thinking: #2a1a3e;
+  --bg-tool: #1a2a3e;
+  --text: #e0e0e0;
+  --text-dim: #8a8aaa;
+  --accent: #e94560;
+  --accent2: #0ea5e9;
+  --border: #2a2a4e;
+  --scrollbar: #333;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 320px;
+  min-width: 320px;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-header svg { width: 22px; height: 22px; }
+
+.sidebar-content {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.project-item {
+  border-bottom: 1px solid var(--border);
+}
+
+.project-header {
+  padding: 12px 16px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: background 0.15s;
+  font-size: 13px;
+}
+
+.project-header:hover { background: rgba(255,255,255,0.05); }
+
+.project-header .name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.project-header .badge {
+  background: var(--accent);
+  color: white;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.project-header .arrow {
+  margin-right: 8px;
+  transition: transform 0.2s;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.project-header.expanded .arrow { transform: rotate(90deg); }
+
+.session-list { display: none; }
+.session-list.show { display: block; }
+
+.session-item {
+  padding: 10px 16px 10px 28px;
+  cursor: pointer;
+  font-size: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  transition: background 0.15s;
+}
+
+.session-item:hover { background: rgba(255,255,255,0.05); }
+.session-item.active { background: var(--bg-card); border-left: 3px solid var(--accent); }
+
+.session-item .title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+
+.session-item .title span { font-size: 12px; }
+
+.session-item .preview {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+  opacity: 0.7;
+}
+
+.session-item .meta {
+  color: var(--text-dim);
+  font-size: 11px;
+  display: flex;
+  gap: 12px;
+}
+
+/* Main content */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.main-header {
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  color: var(--text-dim);
+  background: var(--bg-sidebar);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.main-header .session-title {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.main-header .msg-count {
+  font-size: 12px;
+  background: var(--border);
+  padding: 2px 8px;
+  border-radius: 8px;
+}
+
+.chat-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-dim);
+  font-size: 16px;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Messages */
+.message {
+  margin-bottom: 16px;
+  max-width: 900px;
+}
+
+.message.user {
+  margin-left: auto;
+  margin-right: 0;
+}
+
+.msg-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  padding-left: 4px;
+}
+
+.msg-label.user-label { color: #c084fc; text-align: right; padding-right: 4px; }
+.msg-label.assistant-label { color: var(--accent2); }
+
+.msg-bubble {
+  padding: 12px 16px;
+  border-radius: 12px;
+  line-height: 1.6;
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+.message.user .msg-bubble {
+  background: var(--bg-user);
+  border-bottom-right-radius: 4px;
+}
+
+.message.assistant .msg-bubble {
+  background: var(--bg-assistant);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+
+.msg-timestamp {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 4px;
+  padding-left: 4px;
+}
+
+.message.user .msg-timestamp { text-align: right; padding-right: 4px; }
+
+/* Copy button */
+.msg-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  padding-left: 4px;
+}
+
+.message.user .msg-actions { justify-content: flex-end; padding-right: 4px; }
+
+.btn-small {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-small:hover { background: rgba(255,255,255,0.12); color: var(--text); }
+.btn-small.copied { color: #4ade80; border-color: rgba(34,197,94,0.4); }
+
+/* Checkbox for export selection */
+.msg-checkbox {
+  display: none;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.export-mode .message-wrapper { display: flex; align-items: flex-start; gap: 10px; }
+.export-mode .message-wrapper .msg-checkbox { display: block; margin-top: 10px; }
+.export-mode .message-wrapper.user-wrapper { flex-direction: row-reverse; }
+.export-mode .message-wrapper .message-inner { flex: 1; min-width: 0; }
+
+.message-wrapper.selected-for-export .message-inner {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+
+/* Export toolbar */
+.export-toolbar {
+  display: none;
+  padding: 10px 24px;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.export-toolbar.show { display: flex; }
+
+.export-toolbar .btn {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 6px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.export-toolbar .btn:hover { opacity: 0.85; }
+
+.export-toolbar .btn.secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.export-toolbar .btn.secondary:hover { background: rgba(255,255,255,0.05); }
+
+.export-toolbar .btn.export-btn { background: #16a34a; }
+
+.export-toolbar .selection-info {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-left: auto;
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #1e293b;
+  color: #e0e0e0;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.25s;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.toast.show { opacity: 1; transform: translateY(0); }
+
+/* Thinking block */
+.thinking-block {
+  margin: 8px 0;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.thinking-header {
+  padding: 8px 12px;
+  background: var(--bg-thinking);
+  cursor: pointer;
+  font-size: 12px;
+  color: #c084fc;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
+.thinking-header:hover { background: rgba(139, 92, 246, 0.15); }
+
+.thinking-content {
+  display: none;
+  padding: 12px;
+  background: rgba(42, 26, 62, 0.5);
+  font-size: 13px;
+  color: #c0b0d0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.thinking-content.show { display: block; }
+
+/* Tool blocks */
+.tool-block {
+  margin: 8px 0;
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tool-header {
+  padding: 8px 12px;
+  background: var(--bg-tool);
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
+.tool-header:hover { background: rgba(14, 165, 233, 0.12); }
+
+.tool-name {
+  color: var(--accent2);
+  font-weight: 600;
+}
+
+.tool-content {
+  display: none;
+  padding: 12px;
+  background: rgba(26, 42, 62, 0.5);
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+  color: #a0c0d0;
+}
+
+.tool-content.show { display: block; }
+
+.tool-result-block {
+  margin: 8px 0;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tool-result-header {
+  padding: 8px 12px;
+  background: rgba(26, 42, 30, 0.8);
+  cursor: pointer;
+  font-size: 12px;
+  color: #4ade80;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
+.tool-result-header:hover { background: rgba(34, 197, 94, 0.12); }
+
+.tool-result-content {
+  display: none;
+  padding: 12px;
+  background: rgba(26, 42, 30, 0.4);
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+  color: #a0d0a0;
+}
+
+.tool-result-content.show { display: block; }
+
+.arrow-icon { font-size: 10px; transition: transform 0.2s; }
+.arrow-icon.open { transform: rotate(90deg); }
+
+/* Code blocks in messages */
+.msg-bubble code {
+  background: rgba(0,0,0,0.3);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 13px;
+}
+
+.msg-bubble pre {
+  background: rgba(0,0,0,0.3);
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.msg-bubble pre code {
+  background: none;
+  padding: 0;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: rgba(255,255,255,0.03); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+
+/* Loading */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--text-dim);
+}
+
+.loading::after {
+  content: '';
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-left: 8px;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Filter pills */
+.filter-bar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 16px 4px;
+}
+
+.filter-pill {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.filter-pill:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+
+.filter-pill.active {
+  background: var(--accent2);
+  color: white;
+  border-color: var(--accent2);
+}
+
+/* Scheduled task session styling */
+.session-item.scheduled .title {
+  color: #fbbf24;
+}
+
+.session-item.scheduled .title::before {
+  content: '⏱ ';
+  opacity: 0.7;
+}
+
+/* Search */
+.search-box {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-box input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.2);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+
+.search-box input:focus { border-color: var(--accent2); }
+.search-box input::placeholder { color: var(--text-dim); }
+
+/* Config panel */
+.config-panel {
+  display: none;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0,0,0,0.15);
+}
+
+.config-panel.show { display: block; }
+
+.config-panel .config-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.config-panel .config-row {
+  display: flex;
+  gap: 8px;
+}
+
+.config-panel input {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(0,0,0,0.25);
+  color: var(--text);
+  font-size: 13px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  outline: none;
+}
+
+.config-panel input:focus { border-color: var(--accent2); }
+
+.config-panel .config-btn {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent2);
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.config-panel .config-btn:hover { opacity: 0.85; }
+
+.config-panel .config-status {
+  font-size: 11px;
+  margin-top: 6px;
+  color: var(--text-dim);
+}
+
+.config-panel .config-status.ok { color: #4ade80; }
+.config-panel .config-status.err { color: var(--accent); }
+
+.sidebar-header .settings-btn {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.sidebar-header .settings-btn:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+.sidebar-header .settings-btn.active { color: var(--accent2); border-color: var(--accent2); }
+
+/* No-config empty state */
+.no-config {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  gap: 12px;
+}
+
+.no-config .icon { font-size: 36px; opacity: 0.4; }
+.no-config .title { font-size: 14px; color: var(--text); }
+.no-config .desc { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+
+.no-config .setup-btn {
+  margin-top: 8px;
+  padding: 8px 20px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent2);
+  color: white;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.no-config .setup-btn:hover { opacity: 0.85; }
+
+/* Scroll-to-bottom button */
+.scroll-bottom-btn {
+  position: absolute;
+  bottom: 24px;
+  right: 32px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.2s;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.scroll-bottom-btn.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.scroll-bottom-btn:hover {
+  background: var(--accent2);
+  color: white;
+  border-color: var(--accent2);
+}
+
+/* Scroll-to-top button */
+.scroll-top-btn {
+  position: absolute;
+  bottom: 72px;
+  right: 32px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.2s;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.scroll-top-btn.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.scroll-top-btn:hover {
+  background: var(--accent2);
+  color: white;
+  border-color: var(--accent2);
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:22px;height:22px">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+      Session Viewer
+      <button class="settings-btn" id="settingsBtn" onclick="toggleConfig()" title="配置路径">&#9881;</button>
+    </div>
+    <div class="config-panel" id="configPanel">
+      <div class="config-label">Claude 数据目录 (~/.claude)</div>
+      <div class="config-row">
+        <input type="text" id="claudePathInput" placeholder="例如: /Users/xxx/.claude">
+        <button class="config-btn" onclick="applyPath()">应用</button>
+      </div>
+      <div class="config-status" id="configStatus"></div>
+    </div>
+    <div class="search-box" style="position:relative">
+      <input type="text" id="searchInput" placeholder="搜索 session（回车全文搜索）...">
+      <div id="searchMode" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--text-dim);pointer-events:none"></div>
+    </div>
+    <div class="filter-bar">
+      <button class="filter-pill active" data-filter="all" onclick="setFilter('all')">全部</button>
+      <button class="filter-pill" data-filter="manual" onclick="setFilter('manual')">我的对话</button>
+      <button class="filter-pill" data-filter="scheduled" onclick="setFilter('scheduled')">定时任务</button>
+    </div>
+    <div class="sidebar-content" id="sidebarContent">
+      <div class="loading">加载中</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="main-header" id="mainHeader" style="display:none">
+      <span class="session-title" id="sessionTitle"></span>
+      <span class="msg-count" id="msgCount"></span>
+      <span style="flex:1"></span>
+      <button class="btn-small" id="toggleExportBtn" onclick="toggleExportMode()">导出模式</button>
+    </div>
+    <div class="export-toolbar" id="exportToolbar">
+      <button class="btn secondary" onclick="selectAllMessages()">全选</button>
+      <button class="btn secondary" onclick="selectNoneMessages()">取消全选</button>
+      <button class="btn secondary" onclick="selectConversationOnly()">仅对话</button>
+      <span class="selection-info" id="selectionInfo">已选 0 条</span>
+      <button class="btn export-btn" onclick="exportHtml()">导出 HTML</button>
+      <button class="btn secondary" onclick="copySelectedPlainText()">复制纯文本</button>
+    </div>
+    <div class="chat-container" id="chatContainer">
+      <div class="empty-state">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        选择一个 session 查看对话
+      </div>
+    </div>
+    <button class="scroll-top-btn" id="scrollTopBtn" onclick="scrollToTop()" title="回到顶部">↑</button>
+    <button class="scroll-bottom-btn" id="scrollBottomBtn" onclick="scrollToBottom()" title="跳到最新">↓</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel, parent) => (parent || document).querySelectorAll(sel);
+
+let allSessions = {};
+let currentMessages = []; // store parsed messages for export
+let exportMode = false;
+
+// ── Toast ──
+function showToast(text) {
+  const t = $('#toast');
+  t.textContent = text;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ── Copy helpers ──
+async function copyText(text, btnEl) {
+  await navigator.clipboard.writeText(text);
+  if (btnEl) {
+    const orig = btnEl.textContent;
+    btnEl.textContent = '已复制';
+    btnEl.classList.add('copied');
+    setTimeout(() => { btnEl.textContent = orig; btnEl.classList.remove('copied'); }, 1500);
+  }
+}
+
+function copyMessageText(idx, btnEl) {
+  const group = currentRenderedGroups[idx];
+  if (!group) return;
+  const plainText = groupToPlainText(group);
+  copyText(plainText, btnEl);
+}
+
+// ── Export mode ──
+function toggleExportMode() {
+  exportMode = !exportMode;
+  const chat = $('#chatContainer');
+  const btn = $('#toggleExportBtn');
+  const toolbar = $('#exportToolbar');
+
+  if (exportMode) {
+    chat.classList.add('export-mode');
+    btn.textContent = '退出导出';
+    btn.classList.add('copied');
+    toolbar.classList.add('show');
+  } else {
+    chat.classList.remove('export-mode');
+    btn.textContent = '导出模式';
+    btn.classList.remove('copied');
+    toolbar.classList.remove('show');
+  }
+  updateSelectionInfo();
+}
+
+function selectAllMessages() {
+  $$('.msg-checkbox').forEach(cb => { cb.checked = true; });
+  $$('.message-wrapper').forEach(el => el.classList.add('selected-for-export'));
+  updateSelectionInfo();
+}
+
+function selectNoneMessages() {
+  $$('.msg-checkbox').forEach(cb => { cb.checked = false; });
+  $$('.message-wrapper').forEach(el => el.classList.remove('selected-for-export'));
+  updateSelectionInfo();
+}
+
+function selectConversationOnly() {
+  $$('.msg-checkbox').forEach(cb => {
+    const idx = parseInt(cb.dataset.groupIdx);
+    const group = currentRenderedGroups[idx];
+    if (!group) { cb.checked = false; return; }
+    const hasConversation = group.role === 'user' || (group.role === 'assistant' && group.parts.some(p => p.type === 'text' && p.text.trim()));
+    cb.checked = hasConversation;
+    const wrapper = cb.closest('.message-wrapper');
+    if (wrapper) wrapper.classList.toggle('selected-for-export', hasConversation);
+  });
+  updateSelectionInfo();
+}
+
+function onCheckboxChange(cb) {
+  const wrapper = cb.closest('.message-wrapper');
+  if (wrapper) wrapper.classList.toggle('selected-for-export', cb.checked);
+  updateSelectionInfo();
+}
+
+function updateSelectionInfo() {
+  const checked = $$('.msg-checkbox:checked').length;
+  const info = $('#selectionInfo');
+  if (info) info.textContent = `已选 ${checked} 条`;
+}
+
+// ── Export ──
+function getSelectedGroups() {
+  const checked = $$('.msg-checkbox:checked');
+  if (checked.length === 0) { showToast('请先选择要导出的消息'); return null; }
+  const groups = [];
+  checked.forEach(cb => {
+    const idx = parseInt(cb.dataset.groupIdx);
+    const group = currentRenderedGroups[idx];
+    if (group) groups.push(group);
+  });
+  return groups;
+}
+
+function groupToPlainText(group) {
+  if (group.role === 'user') return `[You]\n${group.text}`;
+  if (group.role === 'assistant') {
+    let text = '[Claude]\n';
+    for (const part of group.parts) {
+      if (part.type === 'text' && part.text.trim()) text += part.text.trim() + '\n';
+      else if (part.type === 'tool_use') {
+        const summary = summarizeToolInput(part.name, part.input);
+        text += `[${part.name}${summary ? ': ' + summary : ''}]\n`;
+      }
+    }
+    return text;
+  }
+  return '';
+}
+
+function groupToHtmlBlock(group, idx) {
+  const copyBtn = `<button class="copy-btn" onclick="copyBlock(this)">复制</button>`;
+  if (group.role === 'user') {
+    return `<div class="msg user-msg" data-plain="${escapeAttr(group.text)}"><div class="role">You ${copyBtn}</div><div class="bubble user-bubble">${escapeHtml(group.text)}</div></div>`;
+  }
+  if (group.role === 'assistant') {
+    let inner = '';
+    let plainParts = [];
+    for (const part of group.parts) {
+      if (part.type === 'text' && part.text.trim()) {
+        inner += `<div class="bubble assistant-bubble">${renderMarkdownForExport(part.text)}</div>`;
+        plainParts.push(part.text.trim());
+      } else if (part.type === 'tool_use') {
+        const summary = summarizeToolInput(part.name, part.input);
+        inner += `<div class="tool-step"><span class="tool-badge">${escapeHtml(part.name)}</span>${summary ? ' <span class="tool-summary">' + escapeHtml(summary) + '</span>' : ''}</div>`;
+        plainParts.push(`[${part.name}${summary ? ': ' + summary : ''}]`);
+      }
+    }
+    if (!inner) return '';
+    return `<div class="msg assistant-msg" data-plain="${escapeAttr(plainParts.join('\n'))}"><div class="role">Claude ${copyBtn}</div>${inner}</div>`;
+  }
+  if (group.role === 'system') {
+    const text = (group.text || '').substring(0, 500);
+    return `<div class="msg system-msg" data-plain="${escapeAttr(text)}"><div class="role">System ${copyBtn}</div><div class="bubble system-bubble">${escapeHtml(text)}</div></div>`;
+  }
+  return '';
+}
+
+function escapeAttr(text) {
+  if (!text) return '';
+  return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function renderMarkdownForExport(text) {
+  let html = escapeHtml(text);
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  // Preserve newlines
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
+
+function buildExportHtml(groups) {
+  const title = $('#sessionTitle').textContent || 'Session';
+  let body = '';
+  for (let i = 0; i < groups.length; i++) {
+    body += groupToHtmlBlock(groups[i], i);
+  }
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHtml(title)}</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #0f172a; color: #e2e8f0; padding: 24px; line-height: 1.7;
+}
+.header { text-align: center; padding: 20px 0 32px; border-bottom: 1px solid #1e293b; margin-bottom: 24px; }
+.header h1 { font-size: 20px; color: #f1f5f9; margin-bottom: 4px; }
+.header .meta { font-size: 12px; color: #64748b; }
+.msg { margin-bottom: 20px; max-width: 860px; }
+.msg.user-msg { margin-left: auto; }
+.msg.assistant-msg { margin-right: auto; }
+.msg.system-msg { margin: 12px auto; max-width: 700px; }
+.role { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; padding: 0 4px; }
+.user-msg .role { color: #c084fc; text-align: right; }
+.assistant-msg .role { color: #38bdf8; }
+.system-msg .role { color: #64748b; }
+.bubble { padding: 12px 16px; border-radius: 12px; font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+.user-bubble { background: #4c1d95; border-bottom-right-radius: 4px; }
+.assistant-bubble { background: #1e293b; border: 1px solid #334155; border-bottom-left-radius: 4px; margin-bottom: 8px; }
+.system-bubble { background: rgba(100,100,100,0.15); border: 1px dashed #334155; font-size: 12px; color: #94a3b8; }
+.tool-step { padding: 6px 12px; margin: 6px 0; font-size: 12px; color: #94a3b8; border-left: 3px solid #334155; }
+.tool-badge { background: #164e63; color: #22d3ee; padding: 1px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.tool-summary { color: #64748b; margin-left: 4px; }
+code { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: 13px; }
+pre { background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; }
+pre code { background: none; padding: 0; }
+h1 { font-size: 18px; margin: 12px 0 4px; }
+h2 { font-size: 16px; margin: 10px 0 4px; }
+h3 { font-size: 15px; margin: 8px 0 4px; }
+.copy-btn { background: rgba(255,255,255,0.08); border: 1px solid #334155; color: #94a3b8; font-size: 11px; padding: 2px 10px; border-radius: 5px; cursor: pointer; margin-left: 8px; transition: all 0.15s; }
+.copy-btn:hover { background: rgba(255,255,255,0.15); color: #e2e8f0; }
+.copy-btn.copied { color: #4ade80; border-color: rgba(34,197,94,0.4); }
+.role { display: flex; align-items: center; }
+.user-msg .role { justify-content: flex-end; }
+</style>
+</head>
+<body>
+<script>
+function copyBlock(btn) {
+  const msg = btn.closest('.msg');
+  const text = msg.dataset.plain || msg.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '已复制';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '复制'; btn.classList.remove('copied'); }, 1500);
+  });
+}
+<\/script>
+<div class="header">
+  <h1>${escapeHtml(title)}</h1>
+  <div class="meta">导出时间: ${new Date().toLocaleString('zh-CN')} &middot; ${groups.length} 条消息</div>
+</div>
+${body}
+</body>
+</html>`;
+}
+
+function exportHtml() {
+  const groups = getSelectedGroups();
+  if (!groups) return;
+  const html = buildExportHtml(groups);
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const title = ($('#sessionTitle').textContent || 'session').replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, '_');
+  a.download = `${title}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('HTML 文件已下载');
+}
+
+function copySelectedPlainText() {
+  const groups = getSelectedGroups();
+  if (!groups) return;
+  const text = groups.map(g => groupToPlainText(g)).filter(Boolean).join('\n\n---\n\n');
+  copyText(text);
+  showToast('已复制纯文本到剪贴板');
+}
+
+// ── Data structures for rendered groups ──
+let currentRenderedGroups = [];
+
+// ── Config ──
+function toggleConfig() {
+  const panel = $('#configPanel');
+  const btn = $('#settingsBtn');
+  panel.classList.toggle('show');
+  btn.classList.toggle('active');
+}
+
+async function applyPath() {
+  const input = $('#claudePathInput');
+  const status = $('#configStatus');
+  const path = input.value.trim();
+  if (!path) { status.textContent = '请输入路径'; status.className = 'config-status err'; return; }
+
+  status.textContent = '验证中...';
+  status.className = 'config-status';
+
+  const res = await fetch('/api/set-path', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  }).then(r => r.json());
+
+  if (res.ok) {
+    status.textContent = '已设置: ' + res.claude_dir;
+    status.className = 'config-status ok';
+    // Reload projects
+    loadProjects();
+  } else {
+    status.textContent = res.error;
+    status.className = 'config-status err';
+  }
+}
+
+// ── Init & data loading ──
+async function init() {
+  // Check status first
+  const status = await fetch('/api/status').then(r => r.json());
+
+  if (status.detected) {
+    $('#claudePathInput').value = status.claude_dir;
+    if (status.is_custom) {
+      $('#configStatus').textContent = '自定义路径: ' + status.claude_dir;
+      $('#configStatus').className = 'config-status ok';
+    }
+    loadProjects();
+  } else {
+    // Show config panel and no-config state
+    $('#configPanel').classList.add('show');
+    $('#settingsBtn').classList.add('active');
+    const sidebar = $('#sidebarContent');
+    sidebar.innerHTML = `
+      <div class="no-config">
+        <div class="icon">&#128269;</div>
+        <div class="title">未检测到 ~/.claude 目录</div>
+        <div class="desc">请在上方输入 Claude 数据目录路径<br>例如: ~/.claude 或 /path/to/.claude</div>
+      </div>
+    `;
+  }
+}
+
+async function loadProjects() {
+  const projects = await fetch('/api/projects').then(r => r.json());
+  const sidebar = $('#sidebarContent');
+  sidebar.innerHTML = '';
+
+  if (projects.length === 0) {
+    sidebar.innerHTML = '<div class="empty-state" style="padding:40px;font-size:13px">未找到 session</div>';
+    return;
+  }
+
+  for (const proj of projects) {
+    const item = document.createElement('div');
+    item.className = 'project-item';
+    // Show last folder prominently, parent path dimmed
+    const parts = proj.name.split('/').filter(Boolean);
+    const lastFolder = parts.pop() || proj.name;
+    const parentPath = parts.length > 0 ? parts.join('/') + '/' : '';
+    const nameHtml = `<span style="color:var(--text-dim);font-size:11px;font-weight:400">${escapeHtml(parentPath)}</span><span style="font-weight:600">${escapeHtml(lastFolder)}</span>`;
+    item.innerHTML = `
+      <div class="project-header" data-project="${proj.id}">
+        <span class="arrow">▶</span>
+        <span class="name" title="${proj.name}">${nameHtml}</span>
+        <span class="badge">${proj.sessions}</span>
+      </div>
+      <div class="session-list" id="sessions-${proj.id}"></div>
+    `;
+    sidebar.appendChild(item);
+
+    item.querySelector('.project-header').addEventListener('click', () => toggleProject(proj.id));
+  }
+
+  if (projects.length > 0) {
+    toggleProject(projects[0].id);
+  }
+}
+
+async function toggleProject(projectId) {
+  const header = $(`.project-header[data-project="${projectId}"]`);
+  const list = $(`#sessions-${projectId}`);
+
+  if (header.classList.contains('expanded')) {
+    header.classList.remove('expanded');
+    list.classList.remove('show');
+    return;
+  }
+
+  header.classList.add('expanded');
+  list.classList.add('show');
+
+  if (list.children.length > 0) return;
+
+  list.innerHTML = '<div class="loading" style="padding:16px;font-size:12px">加载中</div>';
+  const sessions = await fetch(`/api/sessions?project=${projectId}`).then(r => r.json());
+  allSessions[projectId] = sessions;
+  list.innerHTML = '';
+
+  for (const s of sessions) {
+    const item = document.createElement('div');
+    item.className = 'session-item' + (s.sessionType === 'scheduled' ? ' scheduled' : '');
+    item.dataset.path = s.path;
+    item.dataset.project = projectId;
+    item.dataset.sessionType = s.sessionType || 'manual';
+
+    const date = new Date(s.modified * 1000);
+    const dateStr = date.toLocaleDateString('zh-CN') + ' ' + date.toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
+    const sizeStr = s.size > 1024*1024 ? (s.size/1024/1024).toFixed(1)+'MB' : (s.size/1024).toFixed(0)+'KB';
+
+    const displayTitle = s.customTitle || s.slug || s.firstMessage || s.id;
+    const titleHtml = s.customTitle
+      ? `<span style="color:#4ade80;font-weight:600">${escapeHtml(s.customTitle)}</span>`
+      : s.slug
+        ? `<span style="color:#38bdf8">${escapeHtml(s.slug)}</span>`
+        : escapeHtml(displayTitle);
+    const srcIcon = s.entrypoint === 'cli' ? '⌨' : s.entrypoint === 'claude-desktop' ? '🖥' : '';
+    const previewText = s.lastMessage || s.firstMessage || '';
+    const previewHtml = previewText ? `<div class="preview">${escapeHtml(previewText)}</div>` : '';
+
+    item.innerHTML = `
+      <div class="title">${titleHtml}</div>
+      ${previewHtml}
+      <div class="meta">
+        <span>${srcIcon ? srcIcon + ' ' : ''}${dateStr}</span>
+        <span>${sizeStr}</span>
+        <span class="session-id-short" title="点击复制完整 Session ID: ${s.id}" style="opacity:0.6;cursor:pointer">${s.id.substring(0, 8)}</span>
+      </div>
+    `;
+    item.querySelector('.session-id-short').addEventListener('click', (e) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(s.id);
+      const el = e.target;
+      const orig = el.textContent;
+      el.textContent = '已复制!';
+      el.style.color = '#4ade80';
+      setTimeout(() => { el.textContent = orig; el.style.color = ''; }, 1000);
+    });
+    item.addEventListener('click', () => loadSession(s));
+    list.appendChild(item);
+  }
+  applyFilters();
+}
+
+async function loadSession(session) {
+  // Exit export mode when switching sessions
+  if (exportMode) toggleExportMode();
+
+  $$('.session-item').forEach(el => el.classList.remove('active'));
+  const active = $(`.session-item[data-path="${session.path}"]`);
+  if (active) active.classList.add('active');
+
+  const chat = $('#chatContainer');
+  chat.innerHTML = '<div class="loading">加载对话</div>';
+  $('#mainHeader').style.display = 'flex';
+
+  const data = await fetch(`/api/session?path=${encodeURIComponent(session.path)}`).then(r => r.json());
+
+  if (data.error) {
+    chat.innerHTML = `<div class="empty-state">加载失败: ${escapeHtml(data.error)}</div>`;
+    return;
+  }
+
+  currentMessages = data.messages;
+  const customTitle = data.metadata?.title || session.customTitle || '';
+  const slug = session.slug || '';
+  const displayTitle = customTitle || slug || session.firstMessage || session.id;
+  const idTag = `<span class="copy-session-id" title="点击复制" style="color:var(--text-dim);font-size:12px;font-weight:400;cursor:pointer;margin-left:6px" data-id="${session.id}">${session.id.substring(0,8)}</span>`;
+  $('#sessionTitle').innerHTML = customTitle
+    ? `<span style="color:#4ade80">${escapeHtml(customTitle)}</span> ${idTag}`
+    : slug
+      ? `<span style="color:#38bdf8">${escapeHtml(slug)}</span> ${idTag}`
+      : `${escapeHtml(displayTitle)} ${idTag}`;
+  $('#sessionTitle').querySelector('.copy-session-id')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(e.target.dataset.id);
+    const orig = e.target.textContent;
+    e.target.textContent = '已复制!';
+    e.target.style.color = '#4ade80';
+    setTimeout(() => { e.target.textContent = orig; e.target.style.color = ''; }, 1000);
+  });
+
+  const userMsgCount = data.messages.filter(m => m.type === 'user' && m.parts?.some(p => p.type === 'text')).length;
+  const totalMsgCount = data.messages.length;
+  $('#msgCount').textContent = `${userMsgCount} 轮对话 / ${totalMsgCount} 条消息`;
+
+  chat.innerHTML = '';
+  currentRenderedGroups = [];
+  renderMessages(chat, data.messages);
+  // Scroll to bottom to show latest progress
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function renderMessages(container, messages) {
+  let i = 0;
+  while (i < messages.length) {
+    const msg = messages[i];
+
+    if (msg.type === 'user') {
+      const hasToolResult = msg.parts?.some(p => p.type === 'tool_result');
+      const hasText = msg.parts?.some(p => p.type === 'text' && p.text.trim());
+
+      if (hasToolResult && !hasText) {
+        for (const part of msg.parts) {
+          if (part.type === 'tool_result') {
+            const groupIdx = currentRenderedGroups.length;
+            currentRenderedGroups.push({ role: 'tool_result', parts: [part], text: part.content || '' });
+            renderToolResult(container, part, groupIdx);
+          }
+        }
+      } else if (hasText) {
+        const groupIdx = currentRenderedGroups.length;
+        const text = msg.parts.filter(p => p.type === 'text').map(p => p.text).join('\n');
+        currentRenderedGroups.push({ role: 'user', parts: msg.parts, text, timestamp: msg.timestamp });
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'message-wrapper user-wrapper';
+        wrapper.innerHTML = `
+          <input type="checkbox" class="msg-checkbox" data-group-idx="${groupIdx}" onchange="onCheckboxChange(this)">
+          <div class="message-inner message user" data-group-idx="${groupIdx}">
+            <div class="msg-label user-label">You</div>
+            <div class="msg-bubble">${escapeHtml(text)}</div>
+            <div class="msg-actions">
+              <button class="btn-small" onclick="copyMessageText(${groupIdx}, this)">复制</button>
+            </div>
+            ${msg.timestamp ? `<div class="msg-timestamp">${formatTime(msg.timestamp)}</div>` : ''}
+          </div>
+        `;
+        container.appendChild(wrapper);
+      }
+    } else if (msg.type === 'assistant') {
+      const parts = [...(msg.parts || [])];
+      let j = i + 1;
+      while (j < messages.length && messages[j].type === 'assistant') {
+        parts.push(...(messages[j].parts || []));
+        j++;
+      }
+
+      const groupIdx = currentRenderedGroups.length;
+      currentRenderedGroups.push({ role: 'assistant', parts, timestamp: msg.timestamp, model: msg.model });
+
+      let innerHtml = '<div class="msg-label assistant-label">Claude</div>';
+
+      for (const part of parts) {
+        if (part.type === 'text' && part.text.trim()) {
+          innerHtml += `<div class="msg-bubble">${renderMarkdown(part.text)}</div>`;
+        } else if (part.type === 'thinking' && part.text.trim()) {
+          const id = 'think-' + Math.random().toString(36).substr(2, 8);
+          const preview = part.text.substring(0, 80).replace(/\n/g, ' ');
+          innerHtml += `
+            <div class="thinking-block">
+              <div class="thinking-header" onclick="toggleBlock('${id}', this)">
+                <span class="arrow-icon">▶</span>
+                思考过程 <span style="color:var(--text-dim);margin-left:8px;font-style:italic">${escapeHtml(preview)}...</span>
+              </div>
+              <div class="thinking-content" id="${id}">${escapeHtml(part.text)}</div>
+            </div>
+          `;
+        } else if (part.type === 'tool_use') {
+          const id = 'tool-' + Math.random().toString(36).substr(2, 8);
+          const inputStr = JSON.stringify(part.input, null, 2);
+          const shortInput = summarizeToolInput(part.name, part.input);
+          innerHtml += `
+            <div class="tool-block">
+              <div class="tool-header" onclick="toggleBlock('${id}', this)">
+                <span class="arrow-icon">▶</span>
+                <span class="tool-name">${escapeHtml(part.name)}</span>
+                <span style="color:var(--text-dim);margin-left:8px">${escapeHtml(shortInput)}</span>
+              </div>
+              <div class="tool-content" id="${id}">${escapeHtml(inputStr)}</div>
+            </div>
+          `;
+        }
+      }
+
+      innerHtml += `<div class="msg-actions"><button class="btn-small" onclick="copyMessageText(${groupIdx}, this)">复制</button></div>`;
+      if (msg.timestamp) {
+        innerHtml += `<div class="msg-timestamp">${formatTime(msg.timestamp)}${msg.model ? ' · ' + msg.model : ''}</div>`;
+      }
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'message-wrapper';
+      wrapper.innerHTML = `
+        <input type="checkbox" class="msg-checkbox" data-group-idx="${groupIdx}" onchange="onCheckboxChange(this)">
+        <div class="message-inner message assistant" data-group-idx="${groupIdx}">${innerHtml}</div>
+      `;
+      container.appendChild(wrapper);
+      i = j;
+      continue;
+    } else if (msg.type === 'system') {
+      const groupIdx = currentRenderedGroups.length;
+      const content = typeof msg.content === 'string' ? msg.content :
+        (Array.isArray(msg.content) ? msg.content.map(c => c.text || '').join('') : JSON.stringify(msg.content));
+      currentRenderedGroups.push({ role: 'system', parts: [], text: content });
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'message-wrapper';
+      wrapper.innerHTML = `
+        <input type="checkbox" class="msg-checkbox" data-group-idx="${groupIdx}" onchange="onCheckboxChange(this)">
+        <div class="message-inner message assistant" data-group-idx="${groupIdx}">
+          <div class="msg-label" style="color:var(--text-dim)">SYSTEM</div>
+          <div class="msg-bubble" style="background:rgba(100,100,100,0.2);border:1px dashed var(--border);font-size:12px;color:var(--text-dim)">${escapeHtml(content.substring(0, 500))}${content.length > 500 ? '...' : ''}</div>
+        </div>
+      `;
+      container.appendChild(wrapper);
+    }
+    i++;
+  }
+}
+
+function renderToolResult(container, part, groupIdx) {
+  const id = 'tr-' + Math.random().toString(36).substr(2, 8);
+  const content = part.content || '';
+  const preview = content.substring(0, 80).replace(/\n/g, ' ');
+  const wrapper = document.createElement('div');
+  wrapper.className = 'message-wrapper';
+  wrapper.innerHTML = `
+    <input type="checkbox" class="msg-checkbox" data-group-idx="${groupIdx}" onchange="onCheckboxChange(this)">
+    <div class="message-inner message assistant" data-group-idx="${groupIdx}">
+      <div class="tool-result-block">
+        <div class="tool-result-header" onclick="toggleBlock('${id}', this)">
+          <span class="arrow-icon">▶</span>
+          工具结果 <span style="color:var(--text-dim);margin-left:8px">${escapeHtml(preview)}${content.length > 80 ? '...' : ''}</span>
+        </div>
+        <div class="tool-result-content" id="${id}">${escapeHtml(content)}</div>
+      </div>
+    </div>
+  `;
+  container.appendChild(wrapper);
+}
+
+function toggleBlock(id, headerEl) {
+  const el = document.getElementById(id);
+  el.classList.toggle('show');
+  headerEl.querySelector('.arrow-icon').classList.toggle('open');
+}
+
+function summarizeToolInput(name, input) {
+  if (!input) return '';
+  if (name === 'Read' || name === 'Write') return input.file_path || '';
+  if (name === 'Bash') return (input.command || '').substring(0, 60);
+  if (name === 'Edit') return input.file_path || '';
+  if (name === 'Grep') return input.pattern || '';
+  if (name === 'Glob') return input.pattern || '';
+  if (name === 'Agent') return input.description || '';
+  if (input.command) return input.command.substring(0, 60);
+  if (input.query) return input.query.substring(0, 60);
+  return '';
+}
+
+function renderMarkdown(text) {
+  let html = escapeHtml(text);
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/^### (.+)$/gm, '<strong style="font-size:15px">$1</strong>');
+  html = html.replace(/^## (.+)$/gm, '<strong style="font-size:16px">$1</strong>');
+  html = html.replace(/^# (.+)$/gm, '<strong style="font-size:18px">$1</strong>');
+  return html;
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function formatTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts;
+  return d.toLocaleString('zh-CN', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'});
+}
+
+// ── Session type filter ──
+let currentFilter = 'all';
+
+function setFilter(type) {
+  currentFilter = type;
+  $$('.filter-pill').forEach(el => {
+    el.classList.toggle('active', el.dataset.filter === type);
+  });
+  applyFilters();
+}
+
+function applyFilters() {
+  const q = ($('#searchInput').value || '').toLowerCase();
+  $$('.session-item').forEach(el => {
+    const type = el.dataset.sessionType || 'manual';
+    const typeMatch = currentFilter === 'all' || type === currentFilter;
+    const title = el.querySelector('.title')?.textContent.toLowerCase() || '';
+    const meta = el.querySelector('.meta')?.textContent.toLowerCase() || '';
+    const preview = el.querySelector('.preview')?.textContent.toLowerCase() || '';
+    const textMatch = !q || title.includes(q) || meta.includes(q) || preview.includes(q);
+    el.style.display = (typeMatch && textMatch) ? '' : 'none';
+  });
+}
+
+// ── Scroll buttons ──
+function scrollToBottom() {
+  const chat = $('#chatContainer');
+  chat.scrollTo({ top: chat.scrollHeight, behavior: 'smooth' });
+}
+
+function scrollToTop() {
+  const chat = $('#chatContainer');
+  chat.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+$('#chatContainer').addEventListener('scroll', () => {
+  const chat = $('#chatContainer');
+  const distFromBottom = chat.scrollHeight - chat.scrollTop - chat.clientHeight;
+  const distFromTop = chat.scrollTop;
+  $('#scrollBottomBtn').classList.toggle('show', distFromBottom > 300);
+  $('#scrollTopBtn').classList.toggle('show', distFromTop > 300);
+});
+
+// Debounced title-only filter on input
+let searchTimer = null;
+$('#searchInput').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  $('#searchMode').textContent = q ? '标题' : '';
+  // Clear full-text results, restore normal list
+  $$('.search-result-item').forEach(el => el.remove());
+  applyFilters();
+});
+
+// Enter triggers full-text search via backend
+$('#searchInput').addEventListener('keydown', async (e) => {
+  if (e.key !== 'Enter') return;
+  const q = e.target.value.trim();
+  if (!q) return;
+
+  // Find which project is currently expanded
+  const expandedHeader = document.querySelector('.project-header.expanded');
+  if (!expandedHeader) return;
+  const projectId = expandedHeader.dataset.project;
+  if (!projectId) return;
+  const expandedProject = expandedHeader.closest('.project-item');
+
+  $('#searchMode').textContent = '全文搜索中...';
+
+  try {
+    const results = await fetch(`/api/search?project=${encodeURIComponent(projectId)}&q=${encodeURIComponent(q)}`).then(r => r.json());
+
+    // Hide all normal items, show search results
+    const list = expandedProject.querySelector('.session-list');
+    $$('.session-item', list).forEach(el => el.style.display = 'none');
+    $$('.search-result-item', list).forEach(el => el.remove());
+
+    if (results.length === 0) {
+      $('#searchMode').textContent = '无结果';
+      return;
+    }
+
+    $('#searchMode').textContent = `${results.length} 个 session`;
+
+    for (const r of results) {
+      const item = document.createElement('div');
+      item.className = 'session-item search-result-item' + (r.sessionType === 'scheduled' ? ' scheduled' : '');
+      item.dataset.path = r.path;
+      item.dataset.project = projectId;
+      item.dataset.sessionType = r.sessionType || 'manual';
+
+      const date = new Date(r.modified * 1000);
+      const dateStr = date.toLocaleDateString('zh-CN') + ' ' + date.toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
+      const displayTitle = r.customTitle || r.slug || r.firstMessage || r.id;
+      const titleHtml = r.customTitle
+        ? `<span style="color:#4ade80;font-weight:600">${escapeHtml(r.customTitle)}</span>`
+        : r.slug
+          ? `<span style="color:#38bdf8">${escapeHtml(r.slug)}</span>`
+          : escapeHtml(displayTitle);
+
+      // Highlight query in snippets
+      const snippetsHtml = r.matches.map(m => {
+        const hl = escapeHtml(m.snippet).replace(
+          new RegExp(escapeHtml(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
+          match => `<mark style="background:#f59e0b33;color:#f59e0b;padding:0 2px;border-radius:2px">${match}</mark>`
+        );
+        const icon = m.role === 'user' ? '👤' : '🤖';
+        return `<div style="font-size:11px;color:var(--text-dim);margin-top:3px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${icon} ${hl}</div>`;
+      }).join('');
+
+      item.innerHTML = `
+        <div class="title">${titleHtml} <span style="color:#f59e0b;font-size:11px">(${r.matchCount} 处匹配)</span></div>
+        ${snippetsHtml}
+        <div class="meta">
+          <span>${dateStr}</span>
+          <span>${r.id.substring(0, 8)}</span>
+        </div>
+      `;
+      item.addEventListener('click', () => loadSession(r));
+      list.prepend(item);
+    }
+  } catch (err) {
+    $('#searchMode').textContent = '搜索出错';
+  }
+});
+
+init();
+</script>
+</body>
+</html>
