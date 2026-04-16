@@ -39,6 +39,36 @@ def get_claude_dir():
     return None
 
 
+def load_app_session_meta():
+    """Scan Claude desktop app state to map cliSessionId → {isArchived, title}.
+
+    Claude app stores per-session metadata (archive flag, user-edited title)
+    under ~/Library/Application Support/Claude/{claude-code,local-agent-mode}-sessions/
+    as nested local_*.json files. The cliSessionId field there matches the JSONL file stem.
+    """
+    meta = {}
+    roots = [
+        Path.home() / "Library/Application Support/Claude/claude-code-sessions",
+        Path.home() / "Library/Application Support/Claude/local-agent-mode-sessions",
+    ]
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for f in root.rglob("local_*.json"):
+            try:
+                obj = json.loads(f.read_text())
+                cli_id = obj.get("cliSessionId")
+                if not cli_id:
+                    continue
+                meta[cli_id] = {
+                    "isArchived": bool(obj.get("isArchived")),
+                    "title": obj.get("title", "") or "",
+                }
+            except Exception:
+                continue
+    return meta
+
+
 class SessionHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -179,10 +209,15 @@ class SessionHandler(SimpleHTTPRequestHandler):
         project_dir = claude_dir / "projects" / project_id
         if not project_dir.exists():
             return []
+        app_meta = load_app_session_meta()
         sessions = []
         for f in sorted(project_dir.glob("*.jsonl"), key=lambda x: x.stat().st_mtime, reverse=True):
             stat = f.stat()
             custom_title, first_msg, last_msg, slug, entrypoint, session_type = self._extract_title(f)
+            app_info = app_meta.get(f.stem, {})
+            # Prefer Claude app's user-edited title if the JSONL didn't have one
+            if not custom_title and app_info.get("title"):
+                custom_title = app_info["title"]
             sessions.append({
                 "id": f.stem,
                 "path": str(f),
@@ -194,6 +229,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
                 "slug": slug,
                 "entrypoint": entrypoint,
                 "sessionType": session_type,
+                "isArchived": app_info.get("isArchived", False),
             })
         return sessions
 
@@ -376,6 +412,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
 
         query_lower = query.lower()
         results = []
+        app_meta = load_app_session_meta()
 
         for f in sorted(project_dir.glob("*.jsonl"), key=lambda x: x.stat().st_mtime, reverse=True):
             matches = []
@@ -421,6 +458,9 @@ class SessionHandler(SimpleHTTPRequestHandler):
             if matches:
                 stat = f.stat()
                 custom_title, first_msg, last_msg, slug, entrypoint, session_type = self._extract_title(f)
+                app_info = app_meta.get(f.stem, {})
+                if not custom_title and app_info.get("title"):
+                    custom_title = app_info["title"]
                 results.append({
                     "id": f.stem,
                     "path": str(f),
@@ -432,6 +472,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
                     "slug": slug,
                     "entrypoint": entrypoint,
                     "sessionType": session_type,
+                    "isArchived": app_info.get("isArchived", False),
                     "matches": matches,
                     "matchCount": len(matches),
                 })
