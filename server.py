@@ -145,6 +145,49 @@ class SessionHandler(SimpleHTTPRequestHandler):
         save_config(cfg)
         return {"ok": True, "claude_dir": str(p)}
 
+    @staticmethod
+    def _read_cwd(jsonls):
+        """Return the `cwd` field from the first JSONL line that has one, else None."""
+        for f in jsonls:
+            try:
+                with open(f, "r") as fh:
+                    for line in fh:
+                        obj = json.loads(line)
+                        cwd = obj.get("cwd")
+                        if cwd:
+                            return cwd
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _decode_dir_name(raw):
+        """Fallback path decoder when no JSONL `cwd` is available."""
+        if not raw.startswith("-"):
+            return raw.replace("-", "/")
+        naive = "/" + raw[1:].replace("-", "/")
+        if Path(naive).exists():
+            return naive
+        # Walk segments; when a segment doesn't resolve, try rejoining with
+        # the previous path using '-' or '_' (both flatten to '-' on disk).
+        segs = raw[1:].split("-")
+        real_path = ""
+        for seg in segs:
+            test = real_path + "/" + seg
+            if Path(test).exists():
+                real_path = test
+            elif real_path:
+                merged = None
+                for sep in ("-", "_"):
+                    cand = real_path + sep + seg
+                    if Path(cand).exists():
+                        merged = cand
+                        break
+                real_path = merged if merged else real_path + "/" + seg
+            else:
+                real_path = "/" + seg
+        return real_path
+
     def _list_projects(self):
         claude_dir = get_claude_dir()
         if not claude_dir:
@@ -156,38 +199,13 @@ class SessionHandler(SimpleHTTPRequestHandler):
         projects = []
         for d in sorted(projects_dir.iterdir()):
             if d.is_dir():
-                jsonl_count = len(list(d.glob("*.jsonl")))
+                jsonls = list(d.glob("*.jsonl"))
+                jsonl_count = len(jsonls)
                 if jsonl_count > 0:
-                    # Recover real path: dir name is path with / replaced by -
-                    # e.g. "-Users-bytedance-Documents-format_toolbox"
-                    raw = d.name
-                    if raw.startswith("-"):
-                        real_path = "/" + raw[1:].replace("-", "/")
-                        # Try to find the actual existing path by checking longest match
-                        # Heuristic: the dir name encodes the real path with - as /
-                        # but folder names may contain -, so try to reconstruct
-                        candidate = Path(real_path)
-                        if not candidate.exists():
-                            # Walk segments to find the real boundary
-                            segs = raw[1:].split("-")
-                            real_path = ""
-                            for seg in segs:
-                                test = real_path + "/" + seg
-                                if Path(test).exists():
-                                    real_path = test
-                                elif real_path:
-                                    # Try merging with hyphen (original name had -)
-                                    test2 = real_path + "-" + seg
-                                    if Path(test2).exists():
-                                        real_path = test2
-                                    else:
-                                        real_path = real_path + "/" + seg
-                                else:
-                                    real_path = "/" + seg
-                        else:
-                            real_path = str(candidate)
-                    else:
-                        real_path = raw.replace("-", "/")
+                    # Prefer the authoritative `cwd` field from any JSONL line; the dir
+                    # name encoding (/ → -) is lossy because folder names can contain
+                    # both '-' and '_'.
+                    real_path = self._read_cwd(jsonls) or self._decode_dir_name(d.name)
 
                     # Create display name: strip home prefix, show as ~/...
                     if real_path.startswith(home):
