@@ -145,6 +145,49 @@ class SessionHandler(SimpleHTTPRequestHandler):
         save_config(cfg)
         return {"ok": True, "claude_dir": str(p)}
 
+    @staticmethod
+    def _read_cwd(jsonls):
+        """Return the `cwd` field from the first JSONL line that has one, else None."""
+        for f in jsonls:
+            try:
+                with open(f, "r") as fh:
+                    for line in fh:
+                        obj = json.loads(line)
+                        cwd = obj.get("cwd")
+                        if cwd:
+                            return cwd
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
+    def _decode_dir_name(raw):
+        """Fallback path decoder when no JSONL `cwd` is available."""
+        if not raw.startswith("-"):
+            return raw.replace("-", "/")
+        naive = "/" + raw[1:].replace("-", "/")
+        if Path(naive).exists():
+            return naive
+        # Walk segments; when a segment doesn't resolve, try rejoining with
+        # the previous path using '-' or '_' (both flatten to '-' on disk).
+        segs = raw[1:].split("-")
+        real_path = ""
+        for seg in segs:
+            test = real_path + "/" + seg
+            if Path(test).exists():
+                real_path = test
+            elif real_path:
+                merged = None
+                for sep in ("-", "_"):
+                    cand = real_path + sep + seg
+                    if Path(cand).exists():
+                        merged = cand
+                        break
+                real_path = merged if merged else real_path + "/" + seg
+            else:
+                real_path = "/" + seg
+        return real_path
+
     def _list_projects(self):
         claude_dir = get_claude_dir()
         if not claude_dir:
@@ -156,38 +199,13 @@ class SessionHandler(SimpleHTTPRequestHandler):
         projects = []
         for d in sorted(projects_dir.iterdir()):
             if d.is_dir():
-                jsonl_count = len(list(d.glob("*.jsonl")))
+                jsonls = list(d.glob("*.jsonl"))
+                jsonl_count = len(jsonls)
                 if jsonl_count > 0:
-                    # Recover real path: dir name is path with / replaced by -
-                    # e.g. "-Users-bytedance-Documents-format_toolbox"
-                    raw = d.name
-                    if raw.startswith("-"):
-                        real_path = "/" + raw[1:].replace("-", "/")
-                        # Try to find the actual existing path by checking longest match
-                        # Heuristic: the dir name encodes the real path with - as /
-                        # but folder names may contain -, so try to reconstruct
-                        candidate = Path(real_path)
-                        if not candidate.exists():
-                            # Walk segments to find the real boundary
-                            segs = raw[1:].split("-")
-                            real_path = ""
-                            for seg in segs:
-                                test = real_path + "/" + seg
-                                if Path(test).exists():
-                                    real_path = test
-                                elif real_path:
-                                    # Try merging with hyphen (original name had -)
-                                    test2 = real_path + "-" + seg
-                                    if Path(test2).exists():
-                                        real_path = test2
-                                    else:
-                                        real_path = real_path + "/" + seg
-                                else:
-                                    real_path = "/" + seg
-                        else:
-                            real_path = str(candidate)
-                    else:
-                        real_path = raw.replace("-", "/")
+                    # Prefer the authoritative `cwd` field from any JSONL line; the dir
+                    # name encoding (/ → -) is lossy because folder names can contain
+                    # both '-' and '_'.
+                    real_path = self._read_cwd(jsonls) or self._decode_dir_name(d.name)
 
                     # Create display name: strip home prefix, show as ~/...
                     if real_path.startswith(home):
@@ -213,7 +231,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
         sessions = []
         for f in sorted(project_dir.glob("*.jsonl"), key=lambda x: x.stat().st_mtime, reverse=True):
             stat = f.stat()
-            custom_title, first_msg, last_msg, slug, entrypoint, session_type = self._extract_title(f)
+            custom_title, first_msg, last_msg, slug, entrypoint, session_type, fork_root = self._extract_title(f)
             app_info = app_meta.get(f.stem, {})
             # Prefer Claude app's user-edited title if the JSONL didn't have one
             if not custom_title and app_info.get("title"):
@@ -230,6 +248,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
                 "entrypoint": entrypoint,
                 "sessionType": session_type,
                 "isArchived": app_info.get("isArchived", False),
+                "forkRoot": fork_root,
             })
         return sessions
 
@@ -257,13 +276,16 @@ class SessionHandler(SimpleHTTPRequestHandler):
         return False
 
     def _extract_title(self, filepath):
-        """Extract custom title, first real user message, last user query, slug, entrypoint, and session type."""
+        """Extract custom title, first real user message, last user query, slug, entrypoint, session type, and fork root."""
         custom_title = ""
         first_user_msg = ""
         last_user_msg = ""
         entrypoint = ""
         slug = ""
         session_type = "manual"  # "manual" or "scheduled"
+        # `logicalParentUuid` on the first compact_boundary marks where this session
+        # forked from. Sessions sharing it are siblings (fork/compact from same parent).
+        fork_root = ""
         try:
             with open(filepath, "r") as f:
                 for line in f:
@@ -274,6 +296,8 @@ class SessionHandler(SimpleHTTPRequestHandler):
                         entrypoint = obj.get("entrypoint", "")
                     if not slug and obj.get("slug"):
                         slug = obj.get("slug", "")
+                    if not fork_root and obj.get("logicalParentUuid"):
+                        fork_root = obj.get("logicalParentUuid", "")
                     if obj.get("type") == "user":
                         # Skip meta messages (isMeta, local-command-caveat, etc.)
                         if obj.get("isMeta"):
@@ -310,7 +334,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
                             last_user_msg = text
         except Exception:
             pass
-        return custom_title, first_user_msg, last_user_msg, slug, entrypoint, session_type
+        return custom_title, first_user_msg, last_user_msg, slug, entrypoint, session_type, fork_root
 
     def _read_session(self, filepath):
         claude_dir = get_claude_dir()
@@ -457,7 +481,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
 
             if matches:
                 stat = f.stat()
-                custom_title, first_msg, last_msg, slug, entrypoint, session_type = self._extract_title(f)
+                custom_title, first_msg, last_msg, slug, entrypoint, session_type, fork_root = self._extract_title(f)
                 app_info = app_meta.get(f.stem, {})
                 if not custom_title and app_info.get("title"):
                     custom_title = app_info["title"]
@@ -473,6 +497,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
                     "entrypoint": entrypoint,
                     "sessionType": session_type,
                     "isArchived": app_info.get("isArchived", False),
+                    "forkRoot": fork_root,
                     "matches": matches,
                     "matchCount": len(matches),
                 })
