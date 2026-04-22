@@ -734,6 +734,159 @@ body {
   border-color: var(--accent2);
 }
 
+/* Worktree nesting */
+.worktree-list {
+  border-left: 2px solid rgba(34, 197, 94, 0.25);
+  margin-left: 14px;
+}
+
+.worktree-list .project-item { border-bottom: 1px solid rgba(255,255,255,0.03); }
+.worktree-list .project-item:last-child { border-bottom: none; }
+
+.worktree-list .project-header {
+  padding: 10px 12px 10px 10px;
+  font-size: 12px;
+}
+
+.worktree-list .project-header .name { color: #86efac; }
+
+.project-header .wt-count {
+  color: #86efac;
+  font-size: 10px;
+  padding: 1px 6px;
+  background: rgba(34, 197, 94, 0.12);
+  border-radius: 8px;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.wt-icon {
+  margin-right: 4px;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+/* Fork group */
+.fork-group {
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+
+.fork-group-header {
+  padding: 8px 16px 8px 22px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s;
+  user-select: none;
+}
+
+.fork-group-header:hover { background: rgba(255,255,255,0.04); }
+
+.fork-group-header .arrow {
+  font-size: 9px;
+  color: var(--text-dim);
+  transition: transform 0.2s;
+}
+
+.fork-group-header.expanded .arrow { transform: rotate(90deg); }
+
+.fork-group-header .fork-icon {
+  color: #f59e0b;
+}
+
+.fork-group-header .fork-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.fork-group-header .fork-count {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.fork-group-children {
+  display: none;
+  border-left: 2px solid rgba(245, 158, 11, 0.3);
+  margin-left: 22px;
+}
+
+.fork-group-children.show { display: block; }
+
+.fork-group-children .session-item { padding-left: 16px; }
+
+/* Find-in-page bar */
+.find-bar {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border);
+}
+
+.find-bar.show { display: flex; }
+
+.find-bar input {
+  flex: 1;
+  max-width: 260px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(0,0,0,0.25);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+
+.find-bar input:focus { border-color: var(--accent2); }
+
+.find-bar .find-count {
+  font-size: 11px;
+  color: var(--text-dim);
+  min-width: 52px;
+  text-align: center;
+}
+
+.find-bar .find-btn {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.find-bar .find-btn:hover { background: rgba(255,255,255,0.12); color: var(--text); }
+.find-bar .find-btn:disabled { opacity: 0.4; cursor: default; }
+
+.find-hit {
+  background: rgba(245, 158, 11, 0.35);
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
+}
+
+.find-hit.current {
+  background: #f59e0b;
+  color: #1a1a2e;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.4);
+}
+
 /* Scroll-to-top button */
 .scroll-top-btn {
   position: absolute;
@@ -807,7 +960,15 @@ body {
       <span class="session-title" id="sessionTitle"></span>
       <span class="msg-count" id="msgCount"></span>
       <span style="flex:1"></span>
+      <button class="btn-small" id="toggleFindBtn" onclick="toggleFindBar()" title="页内搜索 (⌘F)">🔍 页内搜索</button>
       <button class="btn-small" id="toggleExportBtn" onclick="toggleExportMode()">导出模式</button>
+    </div>
+    <div class="find-bar" id="findBar">
+      <input type="text" id="findInput" placeholder="在当前对话内搜索...">
+      <span class="find-count" id="findCount">0 / 0</span>
+      <button class="find-btn" id="findPrevBtn" onclick="findPrev()" title="上一个 (⇧↵)">↑</button>
+      <button class="find-btn" id="findNextBtn" onclick="findNext()" title="下一个 (↵)">↓</button>
+      <button class="find-btn" onclick="closeFindBar()" title="关闭 (Esc)">✕</button>
     </div>
     <div class="export-toolbar" id="exportToolbar">
       <button class="btn secondary" onclick="selectAllMessages()">全选</button>
@@ -1166,30 +1327,71 @@ async function loadProjects() {
     return;
   }
 
+  // Group `.claude/worktrees/<name>` projects under their parent project so
+  // the worktree identifier isn't crowded out by the shared path prefix.
+  const byPath = new Map(projects.map(p => [p.fullPath, p]));
+  const childrenOf = new Map();
+  const worktreeIds = new Set();
+  for (const p of projects) {
+    const m = p.fullPath && p.fullPath.match(/^(.+)\/\.claude\/worktrees\/([^/]+)$/);
+    if (m && byPath.has(m[1])) {
+      const parent = byPath.get(m[1]);
+      if (!childrenOf.has(parent.id)) childrenOf.set(parent.id, []);
+      childrenOf.get(parent.id).push({ ...p, worktreeName: m[2] });
+      worktreeIds.add(p.id);
+    }
+  }
+
+  let firstToExpand = null;
   for (const proj of projects) {
-    const item = document.createElement('div');
-    item.className = 'project-item';
-    // Show last folder prominently, parent path dimmed
-    const parts = proj.name.split('/').filter(Boolean);
-    const lastFolder = parts.pop() || proj.name;
-    const parentPath = parts.length > 0 ? parts.join('/') + '/' : '';
-    const nameHtml = `<span style="color:var(--text-dim);font-size:11px;font-weight:400">${escapeHtml(parentPath)}</span><span style="font-weight:600">${escapeHtml(lastFolder)}</span>`;
-    item.innerHTML = `
-      <div class="project-header" data-project="${proj.id}">
-        <span class="arrow">▶</span>
-        <span class="name" title="${proj.name}">${nameHtml}</span>
-        <span class="badge">${proj.sessions}</span>
-      </div>
-      <div class="session-list" id="sessions-${proj.id}"></div>
-    `;
-    sidebar.appendChild(item);
-
-    item.querySelector('.project-header').addEventListener('click', () => toggleProject(proj.id));
+    if (worktreeIds.has(proj.id)) continue;
+    sidebar.appendChild(buildProjectNode(proj, childrenOf.get(proj.id) || []));
+    if (!firstToExpand) firstToExpand = proj;
   }
+  if (firstToExpand) toggleProject(firstToExpand.id);
+}
 
-  if (projects.length > 0) {
-    toggleProject(projects[0].id);
+function buildProjectNode(proj, worktrees) {
+  const item = document.createElement('div');
+  item.className = 'project-item';
+  const parts = proj.name.split('/').filter(Boolean);
+  const lastFolder = parts.pop() || proj.name;
+  const parentPath = parts.length > 0 ? parts.join('/') + '/' : '';
+  const nameHtml = `<span style="color:var(--text-dim);font-size:11px;font-weight:400">${escapeHtml(parentPath)}</span><span style="font-weight:600">${escapeHtml(lastFolder)}</span>`;
+  const wtBadge = worktrees.length ? `<span class="wt-count" title="${worktrees.length} 个 worktree">🌿${worktrees.length}</span>` : '';
+  item.innerHTML = `
+    <div class="project-header" data-project="${proj.id}">
+      <span class="arrow">▶</span>
+      <span class="name" title="${proj.name}">${nameHtml}</span>
+      ${wtBadge}
+      <span class="badge">${proj.sessions}</span>
+    </div>
+    <div class="session-list" id="sessions-${proj.id}"></div>
+  `;
+  item.querySelector('.project-header').addEventListener('click', () => toggleProject(proj.id));
+  if (worktrees.length) {
+    const wtList = document.createElement('div');
+    wtList.className = 'worktree-list';
+    for (const w of worktrees) wtList.appendChild(buildWorktreeNode(w));
+    item.appendChild(wtList);
   }
+  return item;
+}
+
+function buildWorktreeNode(proj) {
+  const item = document.createElement('div');
+  item.className = 'project-item worktree-item';
+  const nameHtml = `<span class="wt-icon">🌿</span><span style="font-weight:600">${escapeHtml(proj.worktreeName)}</span>`;
+  item.innerHTML = `
+    <div class="project-header" data-project="${proj.id}">
+      <span class="arrow">▶</span>
+      <span class="name" title="${proj.name}">${nameHtml}</span>
+      <span class="badge">${proj.sessions}</span>
+    </div>
+    <div class="session-list" id="sessions-${proj.id}"></div>
+  `;
+  item.querySelector('.project-header').addEventListener('click', () => toggleProject(proj.id));
+  return item;
 }
 
 async function toggleProject(projectId) {
@@ -1212,58 +1414,114 @@ async function toggleProject(projectId) {
   allSessions[projectId] = sessions;
   list.innerHTML = '';
 
+  // Group by forkRoot (logicalParentUuid). Multiple sessions with the same non-empty
+  // root are forks/continuations from the same parent message.
+  const groups = new Map(); // forkRoot -> [sessions]
+  const singletons = []; // sessions with empty or unique root
   for (const s of sessions) {
-    const item = document.createElement('div');
-    const classes = ['session-item'];
-    if (s.sessionType === 'scheduled') classes.push('scheduled');
-    if (s.isArchived) classes.push('archived');
-    item.className = classes.join(' ');
-    item.dataset.path = s.path;
-    item.dataset.project = projectId;
-    item.dataset.sessionType = s.sessionType || 'manual';
-    item.dataset.archived = s.isArchived ? '1' : '0';
+    if (!s.forkRoot) { singletons.push(s); continue; }
+    if (!groups.has(s.forkRoot)) groups.set(s.forkRoot, []);
+    groups.get(s.forkRoot).push(s);
+  }
+  // Collapse single-member groups back to singletons
+  for (const [root, arr] of [...groups.entries()]) {
+    if (arr.length < 2) { singletons.push(...arr); groups.delete(root); }
+  }
 
-    const date = new Date(s.modified * 1000);
-    const dateStr = date.toLocaleDateString('zh-CN') + ' ' + date.toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
-    const sizeStr = s.size > 1024*1024 ? (s.size/1024/1024).toFixed(1)+'MB' : (s.size/1024).toFixed(0)+'KB';
+  // Build display order: each group represented by its newest member's mtime,
+  // singletons by their own mtime. Sort by that, newest first.
+  const entries = [];
+  for (const [root, arr] of groups.entries()) {
+    arr.sort((a, b) => b.modified - a.modified);
+    entries.push({ kind: 'group', root, sessions: arr, sortKey: arr[0].modified });
+  }
+  for (const s of singletons) entries.push({ kind: 'single', session: s, sortKey: s.modified });
+  entries.sort((a, b) => b.sortKey - a.sortKey);
 
-    const displayTitle = s.customTitle || s.slug || s.firstMessage || s.id;
-    const titleHtml = s.customTitle
-      ? `<span style="color:#4ade80;font-weight:600">${escapeHtml(s.customTitle)}</span>`
-      : s.slug
-        ? `<span style="color:#38bdf8">${escapeHtml(s.slug)}</span>`
-        : escapeHtml(displayTitle);
-    const srcIcon = s.entrypoint === 'cli' ? '⌨' : s.entrypoint === 'claude-desktop' ? '🖥' : '';
-    const previewText = s.lastMessage || s.firstMessage || '';
-    const previewHtml = previewText ? `<div class="preview">${escapeHtml(previewText)}</div>` : '';
-
-    item.innerHTML = `
-      <div class="title">${titleHtml}</div>
-      ${previewHtml}
-      <div class="meta">
-        <span>${srcIcon ? srcIcon + ' ' : ''}${dateStr}</span>
-        <span>${sizeStr}</span>
-        <span class="session-id-short" title="点击复制完整 Session ID: ${s.id}" style="opacity:0.6;cursor:pointer">${s.id.substring(0, 8)}</span>
-      </div>
-    `;
-    item.querySelector('.session-id-short').addEventListener('click', (e) => {
-      e.stopPropagation();
-      navigator.clipboard.writeText(s.id);
-      const el = e.target;
-      const orig = el.textContent;
-      el.textContent = '已复制!';
-      el.style.color = '#4ade80';
-      setTimeout(() => { el.textContent = orig; el.style.color = ''; }, 1000);
-    });
-    item.addEventListener('click', () => loadSession(s));
-    list.appendChild(item);
+  for (const e of entries) {
+    if (e.kind === 'single') {
+      list.appendChild(buildSessionItem(e.session, projectId));
+    } else {
+      // Use the oldest member's title as the group label (likely the ancestor)
+      const ancestor = e.sessions[e.sessions.length - 1];
+      const label = ancestor.customTitle || ancestor.slug || ancestor.firstMessage || ancestor.id;
+      const group = document.createElement('div');
+      group.className = 'fork-group';
+      group.innerHTML = `
+        <div class="fork-group-header">
+          <span class="arrow">▶</span>
+          <span class="fork-icon">🔀</span>
+          <span class="fork-label" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+          <span class="fork-count">${e.sessions.length} 分支</span>
+        </div>
+        <div class="fork-group-children"></div>
+      `;
+      const header = group.querySelector('.fork-group-header');
+      const children = group.querySelector('.fork-group-children');
+      header.addEventListener('click', () => {
+        header.classList.toggle('expanded');
+        children.classList.toggle('show');
+      });
+      for (const s of e.sessions) children.appendChild(buildSessionItem(s, projectId));
+      list.appendChild(group);
+    }
   }
   applyFilters();
+}
+
+function buildSessionItem(s, projectId) {
+  const item = document.createElement('div');
+  const classes = ['session-item'];
+  if (s.sessionType === 'scheduled') classes.push('scheduled');
+  if (s.isArchived) classes.push('archived');
+  item.className = classes.join(' ');
+  item.dataset.path = s.path;
+  item.dataset.project = projectId;
+  item.dataset.sessionType = s.sessionType || 'manual';
+  item.dataset.archived = s.isArchived ? '1' : '0';
+
+  const date = new Date(s.modified * 1000);
+  const dateStr = date.toLocaleDateString('zh-CN') + ' ' + date.toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
+  const sizeStr = s.size > 1024*1024 ? (s.size/1024/1024).toFixed(1)+'MB' : (s.size/1024).toFixed(0)+'KB';
+
+  const displayTitle = s.customTitle || s.slug || s.firstMessage || s.id;
+  const titleHtml = s.customTitle
+    ? `<span style="color:#4ade80;font-weight:600">${escapeHtml(s.customTitle)}</span>`
+    : s.slug
+      ? `<span style="color:#38bdf8">${escapeHtml(s.slug)}</span>`
+      : escapeHtml(displayTitle);
+  const srcIcon = s.entrypoint === 'cli' ? '⌨' : s.entrypoint === 'claude-desktop' ? '🖥' : '';
+  const previewText = s.lastMessage || s.firstMessage || '';
+  const previewHtml = previewText ? `<div class="preview">${escapeHtml(previewText)}</div>` : '';
+
+  item.innerHTML = `
+    <div class="title">${titleHtml}</div>
+    ${previewHtml}
+    <div class="meta">
+      <span>${srcIcon ? srcIcon + ' ' : ''}${dateStr}</span>
+      <span>${sizeStr}</span>
+      <span class="session-id-short" title="点击复制完整 Session ID: ${s.id}" style="opacity:0.6;cursor:pointer">${s.id.substring(0, 8)}</span>
+    </div>
+  `;
+  item.querySelector('.session-id-short').addEventListener('click', (e) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(s.id);
+    const el = e.target;
+    const orig = el.textContent;
+    el.textContent = '已复制!';
+    el.style.color = '#4ade80';
+    setTimeout(() => { el.textContent = orig; el.style.color = ''; }, 1000);
+  });
+  item.addEventListener('click', () => loadSession(s));
+  return item;
 }
 
 async function loadSession(session) {
   // Exit export mode when switching sessions
   if (exportMode) toggleExportMode();
+  // Close in-page find when switching sessions (highlights belong to prior DOM)
+  if ($('#findBar').classList.contains('show')) closeFindBar();
+  else { findHits = []; findCurrent = -1; }
 
   $$('.session-item').forEach(el => el.classList.remove('active'));
   const active = $(`.session-item[data-path="${session.path}"]`);
@@ -1525,7 +1783,189 @@ function applyFilters() {
     const textMatch = !q || title.includes(q) || meta.includes(q) || preview.includes(q);
     el.style.display = (typeMatch && textMatch) ? '' : 'none';
   });
+  // Hide fork groups whose children are all hidden; auto-expand when filtering
+  $$('.fork-group').forEach(group => {
+    const children = group.querySelector('.fork-group-children');
+    const items = $$('.session-item', children);
+    const visibleCount = Array.from(items).filter(el => el.style.display !== 'none').length;
+    group.style.display = visibleCount > 0 ? '' : 'none';
+    if (q && visibleCount > 0) {
+      group.querySelector('.fork-group-header').classList.add('expanded');
+      children.classList.add('show');
+    }
+  });
 }
+
+// ── In-page find ──
+let findHits = [];          // array of <mark class="find-hit"> elements
+let findCurrent = -1;        // index into findHits
+const FIND_SKIP_SELECTOR = '.msg-label, .msg-timestamp, .msg-actions, .btn-small, .arrow-icon, .fork-group, .session-item, .find-bar, .main-header';
+
+function toggleFindBar() {
+  const bar = $('#findBar');
+  if (bar.classList.contains('show')) {
+    closeFindBar();
+  } else {
+    bar.classList.add('show');
+    const input = $('#findInput');
+    input.focus();
+    input.select();
+  }
+}
+
+function closeFindBar() {
+  $('#findBar').classList.remove('show');
+  clearFindHighlights();
+  $('#findInput').value = '';
+  $('#findCount').textContent = '0 / 0';
+}
+
+function clearFindHighlights() {
+  // Replace every <mark.find-hit> with its text content, then normalize to merge text nodes.
+  const marks = $$('.find-hit', $('#chatContainer'));
+  const parents = new Set();
+  marks.forEach(m => {
+    const parent = m.parentNode;
+    if (parent) {
+      parent.replaceChild(document.createTextNode(m.textContent), m);
+      parents.add(parent);
+    }
+  });
+  parents.forEach(p => p.normalize && p.normalize());
+  findHits = [];
+  findCurrent = -1;
+}
+
+function runFind(query) {
+  clearFindHighlights();
+  if (!query) {
+    $('#findCount').textContent = '0 / 0';
+    return;
+  }
+  const chat = $('#chatContainer');
+  const qLower = query.toLowerCase();
+  // Walk text nodes, skipping non-content areas
+  const walker = document.createTreeWalker(chat, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue || !node.nodeValue.toLowerCase().includes(qLower)) return NodeFilter.FILTER_REJECT;
+      // Skip if any ancestor matches skip selectors
+      let el = node.parentElement;
+      while (el && el !== chat) {
+        if (el.classList && (el.classList.contains('msg-label') || el.classList.contains('msg-timestamp') || el.classList.contains('msg-actions') || el.classList.contains('btn-small'))) {
+          return NodeFilter.FILTER_REJECT;
+        }
+        el = el.parentElement;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const targets = [];
+  let n;
+  while ((n = walker.nextNode())) targets.push(n);
+
+  const collapsedToOpen = new Set();
+  for (const node of targets) {
+    const text = node.nodeValue;
+    const lower = text.toLowerCase();
+    const frag = document.createDocumentFragment();
+    let i = 0;
+    while (i < text.length) {
+      const idx = lower.indexOf(qLower, i);
+      if (idx === -1) {
+        frag.appendChild(document.createTextNode(text.slice(i)));
+        break;
+      }
+      if (idx > i) frag.appendChild(document.createTextNode(text.slice(i, idx)));
+      const mark = document.createElement('mark');
+      mark.className = 'find-hit';
+      mark.textContent = text.slice(idx, idx + query.length);
+      frag.appendChild(mark);
+      findHits.push(mark);
+      // Track collapsed ancestors (thinking/tool/tool-result content) to auto-expand
+      let anc = mark.parentElement || node.parentElement;
+      // Actually use the original node's parent chain
+      let chainEl = node.parentElement;
+      while (chainEl && chainEl !== chat) {
+        if (chainEl.classList && (chainEl.classList.contains('thinking-content') || chainEl.classList.contains('tool-content') || chainEl.classList.contains('tool-result-content'))) {
+          if (!chainEl.classList.contains('show')) collapsedToOpen.add(chainEl);
+        }
+        chainEl = chainEl.parentElement;
+      }
+      i = idx + query.length;
+    }
+    node.parentNode.replaceChild(frag, node);
+  }
+
+  // Open collapsed blocks that contain a hit; toggle their arrow
+  collapsedToOpen.forEach(el => {
+    el.classList.add('show');
+    const header = el.previousElementSibling;
+    if (header) {
+      const arrow = header.querySelector('.arrow-icon');
+      if (arrow) arrow.classList.add('open');
+    }
+  });
+
+  if (findHits.length) {
+    findCurrent = 0;
+    setCurrentHit(0, true);
+  }
+  updateFindCount();
+}
+
+function setCurrentHit(idx, scroll) {
+  findHits.forEach(m => m.classList.remove('current'));
+  if (idx < 0 || idx >= findHits.length) return;
+  const el = findHits[idx];
+  el.classList.add('current');
+  if (scroll) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  updateFindCount();
+}
+
+function updateFindCount() {
+  const total = findHits.length;
+  const cur = total ? findCurrent + 1 : 0;
+  $('#findCount').textContent = `${cur} / ${total}`;
+  $('#findPrevBtn').disabled = total < 2;
+  $('#findNextBtn').disabled = total < 2;
+}
+
+function findNext() {
+  if (!findHits.length) return;
+  findCurrent = (findCurrent + 1) % findHits.length;
+  setCurrentHit(findCurrent, true);
+}
+
+function findPrev() {
+  if (!findHits.length) return;
+  findCurrent = (findCurrent - 1 + findHits.length) % findHits.length;
+  setCurrentHit(findCurrent, true);
+}
+
+let findTimer = null;
+$('#findInput').addEventListener('input', (e) => {
+  clearTimeout(findTimer);
+  findTimer = setTimeout(() => runFind(e.target.value.trim()), 150);
+});
+
+$('#findInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (e.shiftKey) findPrev(); else findNext();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    closeFindBar();
+  }
+});
+
+// Global Cmd+F / Ctrl+F opens in-page find when a session is open
+document.addEventListener('keydown', (e) => {
+  const isFind = (e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F');
+  if (!isFind) return;
+  if ($('#mainHeader').style.display === 'none') return; // no session loaded
+  e.preventDefault();
+  toggleFindBar();
+});
 
 // ── Scroll buttons ──
 function scrollToBottom() {
