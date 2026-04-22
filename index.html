@@ -142,6 +142,23 @@ body {
   opacity: 0.7;
 }
 
+/* When a fork-branch child has the same title as its group, the title is
+   omitted and the preview becomes the primary line. */
+.session-item.fork-branch .preview {
+  font-size: 12px;
+  color: var(--text);
+  opacity: 1;
+}
+
+.session-item .ancestor-tag {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.12);
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  margin-left: auto;
+}
+
 .session-item .meta {
   color: var(--text-dim);
   font-size: 11px;
@@ -736,9 +753,11 @@ body {
 
 /* Worktree nesting */
 .worktree-list {
+  display: none;
   border-left: 2px solid rgba(34, 197, 94, 0.25);
   margin-left: 14px;
 }
+.worktree-list.show { display: block; }
 
 .worktree-list .project-item { border-bottom: 1px solid rgba(255,255,255,0.03); }
 .worktree-list .project-item:last-child { border-bottom: none; }
@@ -1397,15 +1416,19 @@ function buildWorktreeNode(proj) {
 async function toggleProject(projectId) {
   const header = $(`.project-header[data-project="${projectId}"]`);
   const list = $(`#sessions-${projectId}`);
+  const item = header.closest('.project-item');
+  const wtList = item ? item.querySelector(':scope > .worktree-list') : null;
 
   if (header.classList.contains('expanded')) {
     header.classList.remove('expanded');
     list.classList.remove('show');
+    if (wtList) wtList.classList.remove('show');
     return;
   }
 
   header.classList.add('expanded');
   list.classList.add('show');
+  if (wtList) wtList.classList.add('show');
 
   if (list.children.length > 0) return;
 
@@ -1414,26 +1437,37 @@ async function toggleProject(projectId) {
   allSessions[projectId] = sessions;
   list.innerHTML = '';
 
-  // Group by forkRoot (logicalParentUuid). Multiple sessions with the same non-empty
-  // root are forks/continuations from the same parent message.
-  const groups = new Map(); // forkRoot -> [sessions]
-  const singletons = []; // sessions with empty or unique root
+  // Group related sessions. A user-assigned customTitle is the strongest signal —
+  // forking inherits the /title message, so siblings share it. Fall back to forkRoot
+  // (logicalParentUuid) for unnamed forks. This also absorbs the ancestor session,
+  // which has no forkRoot of its own but shares the customTitle with its forks.
+  const groups = new Map(); // key -> [sessions]
+  const singletons = [];
   for (const s of sessions) {
-    if (!s.forkRoot) { singletons.push(s); continue; }
-    if (!groups.has(s.forkRoot)) groups.set(s.forkRoot, []);
-    groups.get(s.forkRoot).push(s);
+    const key = s.customTitle ? 'title:' + s.customTitle
+              : s.forkRoot   ? 'fork:' + s.forkRoot
+              : '';
+    if (!key) { singletons.push(s); continue; }
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
   }
   // Collapse single-member groups back to singletons
-  for (const [root, arr] of [...groups.entries()]) {
-    if (arr.length < 2) { singletons.push(...arr); groups.delete(root); }
+  for (const [key, arr] of [...groups.entries()]) {
+    if (arr.length < 2) { singletons.push(...arr); groups.delete(key); }
   }
 
   // Build display order: each group represented by its newest member's mtime,
   // singletons by their own mtime. Sort by that, newest first.
   const entries = [];
   for (const [root, arr] of groups.entries()) {
-    arr.sort((a, b) => b.modified - a.modified);
-    entries.push({ kind: 'group', root, sessions: arr, sortKey: arr[0].modified });
+    // Ancestor: the member with empty forkRoot (it's the source others forked from).
+    // Fall back to oldest if no such member exists. Place ancestor first, rest newest-first.
+    const ancestorIdx = arr.findIndex(s => !s.forkRoot);
+    const ancestor = ancestorIdx >= 0 ? arr[ancestorIdx] : arr.reduce((a, b) => a.modified < b.modified ? a : b);
+    const rest = arr.filter(s => s !== ancestor).sort((a, b) => b.modified - a.modified);
+    const ordered = [ancestor, ...rest];
+    const sortKey = Math.max(...arr.map(s => s.modified));
+    entries.push({ kind: 'group', root, sessions: ordered, ancestor, sortKey });
   }
   for (const s of singletons) entries.push({ kind: 'single', session: s, sortKey: s.modified });
   entries.sort((a, b) => b.sortKey - a.sortKey);
@@ -1442,8 +1476,7 @@ async function toggleProject(projectId) {
     if (e.kind === 'single') {
       list.appendChild(buildSessionItem(e.session, projectId));
     } else {
-      // Use the oldest member's title as the group label (likely the ancestor)
-      const ancestor = e.sessions[e.sessions.length - 1];
+      const ancestor = e.ancestor;
       const label = ancestor.customTitle || ancestor.slug || ancestor.firstMessage || ancestor.id;
       const group = document.createElement('div');
       group.className = 'fork-group';
@@ -1462,18 +1495,19 @@ async function toggleProject(projectId) {
         header.classList.toggle('expanded');
         children.classList.toggle('show');
       });
-      for (const s of e.sessions) children.appendChild(buildSessionItem(s, projectId));
+      for (const s of e.sessions) children.appendChild(buildSessionItem(s, projectId, label, s === ancestor));
       list.appendChild(group);
     }
   }
   applyFilters();
 }
 
-function buildSessionItem(s, projectId) {
+function buildSessionItem(s, projectId, groupLabel = '', isAncestor = false) {
   const item = document.createElement('div');
   const classes = ['session-item'];
   if (s.sessionType === 'scheduled') classes.push('scheduled');
   if (s.isArchived) classes.push('archived');
+  if (isAncestor) classes.push('is-ancestor');
   item.className = classes.join(' ');
   item.dataset.path = s.path;
   item.dataset.project = projectId;
@@ -1492,15 +1526,23 @@ function buildSessionItem(s, projectId) {
       : escapeHtml(displayTitle);
   const srcIcon = s.entrypoint === 'cli' ? '⌨' : s.entrypoint === 'claude-desktop' ? '🖥' : '';
   const previewText = s.lastMessage || s.firstMessage || '';
+  // Inside a fork group, children inherit the same customTitle from the shared
+  // ancestor history. Skip the duplicate title row when there's a distinguishing
+  // preview, and let the preview be the primary line.
+  const hideTitle = groupLabel && displayTitle === groupLabel && previewText;
+  if (hideTitle) item.classList.add('fork-branch');
+  const titleBlock = hideTitle ? '' : `<div class="title">${titleHtml}</div>`;
   const previewHtml = previewText ? `<div class="preview">${escapeHtml(previewText)}</div>` : '';
 
+  const ancestorTag = isAncestor ? `<span class="ancestor-tag" title="被 fork 的原始会话">🌱 起点</span>` : '';
   item.innerHTML = `
-    <div class="title">${titleHtml}</div>
+    ${titleBlock}
     ${previewHtml}
     <div class="meta">
       <span>${srcIcon ? srcIcon + ' ' : ''}${dateStr}</span>
       <span>${sizeStr}</span>
       <span class="session-id-short" title="点击复制完整 Session ID: ${s.id}" style="opacity:0.6;cursor:pointer">${s.id.substring(0, 8)}</span>
+      ${ancestorTag}
     </div>
   `;
   item.querySelector('.session-id-short').addEventListener('click', (e) => {
