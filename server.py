@@ -236,6 +236,10 @@ class SessionHandler(SimpleHTTPRequestHandler):
             # Prefer Claude app's user-edited title if the JSONL didn't have one
             if not custom_title and app_info.get("title"):
                 custom_title = app_info["title"]
+            # Skip sessions with no real user input (e.g., only `Unknown command: /x`
+            # or raw <command-message> that parsed to nothing) and no user-set title.
+            if not custom_title and not first_msg:
+                continue
             sessions.append({
                 "id": f.stem,
                 "path": str(f),
@@ -266,6 +270,9 @@ class SessionHandler(SimpleHTTPRequestHandler):
         meta_exact = (
             "[Request interrupted by user]",
         )
+        # Typo'd slash command — CLI auto-inserts this as a user message.
+        if stripped.startswith("Unknown command: /"):
+            return True
         if any(stripped.startswith(tag) for tag in meta_prefixes):
             return True
         if stripped in meta_exact:
