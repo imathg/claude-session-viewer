@@ -275,6 +275,25 @@ class SessionHandler(SimpleHTTPRequestHandler):
             return True
         return False
 
+    @staticmethod
+    def _prettify_command_message(text):
+        """Slash commands are stored as XML blocks:
+            <command-message>plugin</command-message>
+            <command-name>/cmd</command-name>
+            <command-args>args</command-args>[trailing user text]
+        Render them as '/cmd args' plus any trailing text."""
+        if not text or "<command-message>" not in text:
+            return text
+        name_m = re.search(r"<command-name>([^<]*)</command-name>", text)
+        args_m = re.search(r"<command-args>([^<]*)</command-args>", text, re.DOTALL)
+        cleaned = re.sub(r"<command-(message|name|args)>[^<]*</command-\1>", "", text, flags=re.DOTALL).strip()
+        name = name_m.group(1).strip() if name_m else ""
+        args = args_m.group(1).strip() if args_m else ""
+        pretty = (name + " " + args).strip() if name or args else ""
+        if cleaned:
+            pretty = (pretty + " " + cleaned).strip() if pretty else cleaned
+        return pretty
+
     def _extract_title(self, filepath):
         """Extract custom title, first real user message, last user query, slug, entrypoint, session type, and fork root."""
         custom_title = ""
@@ -327,7 +346,11 @@ class SessionHandler(SimpleHTTPRequestHandler):
                             continue
                         if self._is_meta_content(raw_text):
                             continue
-                        text = raw_text[:150]
+                        # Render slash-command XML blocks as '/cmd args'
+                        display_text = self._prettify_command_message(raw_text).strip()
+                        if not display_text:
+                            continue
+                        text = display_text[:150]
                         if text:
                             if not first_user_msg:
                                 first_user_msg = text[:100]
