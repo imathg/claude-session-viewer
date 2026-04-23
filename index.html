@@ -571,6 +571,16 @@ body {
   border-color: var(--accent2);
 }
 
+/* Toggle-style pill (independent of the tab filters) */
+.filter-pill.toggle-pill {
+  margin-left: auto;
+}
+.filter-pill.toggle-pill.active {
+  background: rgba(34, 197, 94, 0.2);
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
 /* Scheduled task session styling */
 .session-item.scheduled .title {
   color: #fbbf24;
@@ -968,6 +978,7 @@ body {
       <button class="filter-pill" data-filter="manual" onclick="setFilter('manual')">我的对话</button>
       <button class="filter-pill" data-filter="scheduled" onclick="setFilter('scheduled')">定时任务</button>
       <button class="filter-pill" data-filter="archived" onclick="setFilter('archived')">已归档</button>
+      <button class="filter-pill toggle-pill" id="hideUnnamedToggle" onclick="toggleHideUnnamed()" title="隐藏没有自定义标题的会话">仅命名</button>
     </div>
     <div class="sidebar-content" id="sidebarContent">
       <div class="loading">加载中</div>
@@ -1311,6 +1322,8 @@ async function applyPath() {
 
 // ── Init & data loading ──
 async function init() {
+  // Restore persisted toggle state
+  if (hideUnnamed) document.getElementById('hideUnnamedToggle').classList.add('active');
   // Check status first
   const status = await fetch('/api/status').then(r => r.json());
 
@@ -1437,21 +1450,35 @@ async function toggleProject(projectId) {
   allSessions[projectId] = sessions;
   list.innerHTML = '';
 
-  // Group related sessions. A user-assigned customTitle is the strongest signal —
-  // forking inherits the /title message, so siblings share it. Fall back to forkRoot
-  // (logicalParentUuid) for unnamed forks. This also absorbs the ancestor session,
-  // which has no forkRoot of its own but shares the customTitle with its forks.
-  const groups = new Map(); // key -> [sessions]
-  const singletons = [];
+  // Group related sessions via union-find: two sessions are in the same family
+  // if they share a non-empty forkRoot (sibling forks) OR a non-empty customTitle
+  // (inherited /title survives renaming and multi-level forks). This merges
+  // sessions that branched from different points but belong to the same
+  // conceptual thread.
+  const parent = new Map();
+  for (const s of sessions) parent.set(s.id, s.id);
+  const find = (x) => {
+    let r = x;
+    while (parent.get(r) !== r) r = parent.get(r);
+    while (parent.get(x) !== r) { const n = parent.get(x); parent.set(x, r); x = n; }
+    return r;
+  };
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); };
+  const idxRoot = new Map(), idxTitle = new Map();
   for (const s of sessions) {
-    const key = s.customTitle ? 'title:' + s.customTitle
-              : s.forkRoot   ? 'fork:' + s.forkRoot
-              : '';
-    if (!key) { singletons.push(s); continue; }
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(s);
+    if (s.forkRoot) { if (!idxRoot.has(s.forkRoot)) idxRoot.set(s.forkRoot, []); idxRoot.get(s.forkRoot).push(s.id); }
+    if (s.customTitle) { if (!idxTitle.has(s.customTitle)) idxTitle.set(s.customTitle, []); idxTitle.get(s.customTitle).push(s.id); }
   }
-  // Collapse single-member groups back to singletons
+  for (const ids of idxRoot.values()) for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]);
+  for (const ids of idxTitle.values()) for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]);
+
+  const groups = new Map(); // root id -> [sessions]
+  for (const s of sessions) {
+    const root = find(s.id);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push(s);
+  }
+  const singletons = [];
   for (const [key, arr] of [...groups.entries()]) {
     if (arr.length < 2) { singletons.push(...arr); groups.delete(key); }
   }
@@ -1460,14 +1487,22 @@ async function toggleProject(projectId) {
   // singletons by their own mtime. Sort by that, newest first.
   const entries = [];
   for (const [root, arr] of groups.entries()) {
-    // Ancestor: the member with empty forkRoot (it's the source others forked from).
-    // Fall back to oldest if no such member exists. Place ancestor first, rest newest-first.
-    const ancestorIdx = arr.findIndex(s => !s.forkRoot);
-    const ancestor = ancestorIdx >= 0 ? arr[ancestorIdx] : arr.reduce((a, b) => a.modified < b.modified ? a : b);
+    // Label = most common customTitle across members (shared family identity).
+    const titleCounts = new Map();
+    for (const s of arr) if (s.customTitle) titleCounts.set(s.customTitle, (titleCounts.get(s.customTitle) || 0) + 1);
+    let groupTitle = '';
+    let best = 0;
+    for (const [t, n] of titleCounts) if (n > best) { best = n; groupTitle = t; }
+    // Ancestor: prefer a rootless member with matching group title, else any rootless,
+    // else the oldest. Place ancestor first, rest newest-first.
+    const rootless = arr.filter(s => !s.forkRoot);
+    const ancestor = rootless.find(s => s.customTitle === groupTitle)
+                  || rootless[0]
+                  || arr.reduce((a, b) => a.modified < b.modified ? a : b);
     const rest = arr.filter(s => s !== ancestor).sort((a, b) => b.modified - a.modified);
     const ordered = [ancestor, ...rest];
     const sortKey = Math.max(...arr.map(s => s.modified));
-    entries.push({ kind: 'group', root, sessions: ordered, ancestor, sortKey });
+    entries.push({ kind: 'group', root, sessions: ordered, ancestor, groupTitle, sortKey });
   }
   for (const s of singletons) entries.push({ kind: 'single', session: s, sortKey: s.modified });
   entries.sort((a, b) => b.sortKey - a.sortKey);
@@ -1477,7 +1512,7 @@ async function toggleProject(projectId) {
       list.appendChild(buildSessionItem(e.session, projectId));
     } else {
       const ancestor = e.ancestor;
-      const label = ancestor.customTitle || ancestor.slug || ancestor.firstMessage || ancestor.id;
+      const label = e.groupTitle || ancestor.customTitle || ancestor.slug || ancestor.firstMessage || ancestor.id;
       const group = document.createElement('div');
       group.className = 'fork-group';
       group.innerHTML = `
@@ -1513,26 +1548,30 @@ function buildSessionItem(s, projectId, groupLabel = '', isAncestor = false) {
   item.dataset.project = projectId;
   item.dataset.sessionType = s.sessionType || 'manual';
   item.dataset.archived = s.isArchived ? '1' : '0';
+  item.dataset.hasName = (s.customTitle || s.slug) ? '1' : '0';
 
   const date = new Date(s.modified * 1000);
   const dateStr = date.toLocaleDateString('zh-CN') + ' ' + date.toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
   const sizeStr = s.size > 1024*1024 ? (s.size/1024/1024).toFixed(1)+'MB' : (s.size/1024).toFixed(0)+'KB';
 
-  const displayTitle = s.customTitle || s.slug || s.firstMessage || s.id;
+  const displayTitle = s.customTitle || s.firstMessage || s.slug || s.id;
   const titleHtml = s.customTitle
     ? `<span style="color:#4ade80;font-weight:600">${escapeHtml(s.customTitle)}</span>`
-    : s.slug
-      ? `<span style="color:#38bdf8">${escapeHtml(s.slug)}</span>`
-      : escapeHtml(displayTitle);
+    : s.firstMessage
+      ? escapeHtml(s.firstMessage)
+      : s.slug
+        ? `<span style="color:#38bdf8">${escapeHtml(s.slug)}</span>`
+        : escapeHtml(displayTitle);
   const srcIcon = s.entrypoint === 'cli' ? '⌨' : s.entrypoint === 'claude-desktop' ? '🖥' : '';
-  const previewText = s.lastMessage || s.firstMessage || '';
+  const samePreview = s.lastMessage && s.firstMessage && (s.lastMessage.startsWith(s.firstMessage) || s.firstMessage.startsWith(s.lastMessage));
+  const previewText = (s.lastMessage && !samePreview) ? s.lastMessage : '';
   // Inside a fork group, children inherit the same customTitle from the shared
   // ancestor history. Skip the duplicate title row when there's a distinguishing
   // preview, and let the preview be the primary line.
   const hideTitle = groupLabel && displayTitle === groupLabel && previewText;
   if (hideTitle) item.classList.add('fork-branch');
-  const titleBlock = hideTitle ? '' : `<div class="title">${titleHtml}</div>`;
-  const previewHtml = previewText ? `<div class="preview">${escapeHtml(previewText)}</div>` : '';
+  const titleBlock = hideTitle ? '' : `<div class="title" title="${escapeHtml(displayTitle)}">${titleHtml}</div>`;
+  const previewHtml = previewText ? `<div class="preview" title="${escapeHtml(previewText)}">${escapeHtml(previewText)}</div>` : '';
 
   const ancestorTag = isAncestor ? `<span class="ancestor-tag" title="被 fork 的原始会话">🌱 起点</span>` : '';
   item.innerHTML = `
@@ -1794,12 +1833,20 @@ function formatTime(ts) {
 
 // ── Session type filter ──
 let currentFilter = 'all';
+let hideUnnamed = localStorage.getItem('hideUnnamed') === '1';
 
 function setFilter(type) {
   currentFilter = type;
-  $$('.filter-pill').forEach(el => {
+  $$('.filter-pill[data-filter]').forEach(el => {
     el.classList.toggle('active', el.dataset.filter === type);
   });
+  applyFilters();
+}
+
+function toggleHideUnnamed() {
+  hideUnnamed = !hideUnnamed;
+  localStorage.setItem('hideUnnamed', hideUnnamed ? '1' : '0');
+  document.getElementById('hideUnnamedToggle').classList.toggle('active', hideUnnamed);
   applyFilters();
 }
 
@@ -1823,7 +1870,9 @@ function applyFilters() {
     const meta = el.querySelector('.meta')?.textContent.toLowerCase() || '';
     const preview = el.querySelector('.preview')?.textContent.toLowerCase() || '';
     const textMatch = !q || title.includes(q) || meta.includes(q) || preview.includes(q);
-    el.style.display = (typeMatch && textMatch) ? '' : 'none';
+    const hasName = el.dataset.hasName === '1';
+    const nameMatch = !hideUnnamed || hasName;
+    el.style.display = (typeMatch && textMatch && nameMatch) ? '' : 'none';
   });
   // Hide fork groups whose children are all hidden; auto-expand when filtering
   $$('.fork-group').forEach(group => {
