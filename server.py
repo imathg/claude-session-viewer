@@ -231,7 +231,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
         sessions = []
         for f in sorted(project_dir.glob("*.jsonl"), key=lambda x: x.stat().st_mtime, reverse=True):
             stat = f.stat()
-            custom_title, first_msg, last_msg, slug, entrypoint, session_type, fork_root = self._extract_title(f)
+            custom_title, first_msg, last_msg, slug, entrypoint, session_type, fork_root, first_msg_uuid = self._extract_title(f)
             app_info = app_meta.get(f.stem, {})
             # Prefer Claude app's user-edited title if the JSONL didn't have one
             if not custom_title and app_info.get("title"):
@@ -253,6 +253,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
                 "sessionType": session_type,
                 "isArchived": app_info.get("isArchived", False),
                 "forkRoot": fork_root,
+                "firstMsgUuid": first_msg_uuid,
             })
         return sessions
 
@@ -312,6 +313,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
         # `logicalParentUuid` on the first compact_boundary marks where this session
         # forked from. Sessions sharing it are siblings (fork/compact from same parent).
         fork_root = ""
+        first_msg_uuid = ""
         try:
             with open(filepath, "r") as f:
                 for line in f:
@@ -328,6 +330,8 @@ class SessionHandler(SimpleHTTPRequestHandler):
                         # Skip meta messages (isMeta, local-command-caveat, etc.)
                         if obj.get("isMeta"):
                             continue
+                        if not first_msg_uuid and obj.get("uuid"):
+                            first_msg_uuid = obj["uuid"]
                         content = obj.get("message", {}).get("content", "")
                         raw_text = ""
                         if isinstance(content, str):
@@ -364,7 +368,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
                             last_user_msg = text
         except Exception:
             pass
-        return custom_title, first_user_msg, last_user_msg, slug, entrypoint, session_type, fork_root
+        return custom_title, first_user_msg, last_user_msg, slug, entrypoint, session_type, fork_root, first_msg_uuid
 
     def _read_session(self, filepath):
         claude_dir = get_claude_dir()
@@ -511,7 +515,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
 
             if matches:
                 stat = f.stat()
-                custom_title, first_msg, last_msg, slug, entrypoint, session_type, fork_root = self._extract_title(f)
+                custom_title, first_msg, last_msg, slug, entrypoint, session_type, fork_root, first_msg_uuid = self._extract_title(f)
                 app_info = app_meta.get(f.stem, {})
                 if not custom_title and app_info.get("title"):
                     custom_title = app_info["title"]
@@ -528,6 +532,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
                     "sessionType": session_type,
                     "isArchived": app_info.get("isArchived", False),
                     "forkRoot": fork_root,
+                    "firstMsgUuid": first_msg_uuid,
                     "matches": matches,
                     "matchCount": len(matches),
                 })

@@ -979,6 +979,7 @@ body {
       <button class="filter-pill" data-filter="scheduled" onclick="setFilter('scheduled')">定时任务</button>
       <button class="filter-pill" data-filter="archived" onclick="setFilter('archived')">已归档</button>
       <button class="filter-pill toggle-pill" id="hideUnnamedToggle" onclick="toggleHideUnnamed()" title="隐藏没有自定义标题的会话">仅命名</button>
+      <button class="filter-pill toggle-pill" id="hideAbandonedToggle" onclick="toggleHideAbandoned()" title="隐藏被 fork 后废弃的原始会话">隐藏废弃</button>
     </div>
     <div class="sidebar-content" id="sidebarContent">
       <div class="loading">加载中</div>
@@ -1324,6 +1325,7 @@ async function applyPath() {
 async function init() {
   // Restore persisted toggle state
   if (hideUnnamed) document.getElementById('hideUnnamedToggle').classList.add('active');
+  if (hideAbandoned) document.getElementById('hideAbandonedToggle').classList.add('active');
   // Check status first
   const status = await fetch('/api/status').then(r => r.json());
 
@@ -1464,13 +1466,15 @@ async function toggleProject(projectId) {
     return r;
   };
   const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); };
-  const idxRoot = new Map(), idxTitle = new Map();
+  const idxRoot = new Map(), idxTitle = new Map(), idxFirstMsg = new Map();
   for (const s of sessions) {
     if (s.forkRoot) { if (!idxRoot.has(s.forkRoot)) idxRoot.set(s.forkRoot, []); idxRoot.get(s.forkRoot).push(s.id); }
     if (s.customTitle) { if (!idxTitle.has(s.customTitle)) idxTitle.set(s.customTitle, []); idxTitle.get(s.customTitle).push(s.id); }
+    if (s.firstMsgUuid) { if (!idxFirstMsg.has(s.firstMsgUuid)) idxFirstMsg.set(s.firstMsgUuid, []); idxFirstMsg.get(s.firstMsgUuid).push(s.id); }
   }
   for (const ids of idxRoot.values()) for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]);
   for (const ids of idxTitle.values()) for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]);
+  for (const ids of idxFirstMsg.values()) for (let i = 1; i < ids.length; i++) union(ids[0], ids[i]);
 
   const groups = new Map(); // root id -> [sessions]
   for (const s of sessions) {
@@ -1568,7 +1572,7 @@ function buildSessionItem(s, projectId, groupLabel = '', isAncestor = false) {
   // Inside a fork group, children inherit the same customTitle from the shared
   // ancestor history. Skip the duplicate title row when there's a distinguishing
   // preview, and let the preview be the primary line.
-  const hideTitle = groupLabel && displayTitle === groupLabel && previewText;
+  const hideTitle = groupLabel && !s.customTitle && displayTitle === groupLabel && previewText;
   if (hideTitle) item.classList.add('fork-branch');
   const titleBlock = hideTitle ? '' : `<div class="title" title="${escapeHtml(displayTitle)}">${titleHtml}</div>`;
   const previewHtml = previewText ? `<div class="preview" title="${escapeHtml(previewText)}">${escapeHtml(previewText)}</div>` : '';
@@ -1834,6 +1838,7 @@ function formatTime(ts) {
 // ── Session type filter ──
 let currentFilter = 'all';
 let hideUnnamed = localStorage.getItem('hideUnnamed') === '1';
+let hideAbandoned = localStorage.getItem('hideAbandoned') !== '0';
 
 function setFilter(type) {
   currentFilter = type;
@@ -1847,6 +1852,13 @@ function toggleHideUnnamed() {
   hideUnnamed = !hideUnnamed;
   localStorage.setItem('hideUnnamed', hideUnnamed ? '1' : '0');
   document.getElementById('hideUnnamedToggle').classList.toggle('active', hideUnnamed);
+  applyFilters();
+}
+
+function toggleHideAbandoned() {
+  hideAbandoned = !hideAbandoned;
+  localStorage.setItem('hideAbandoned', hideAbandoned ? '1' : '0');
+  document.getElementById('hideAbandonedToggle').classList.toggle('active', hideAbandoned);
   applyFilters();
 }
 
@@ -1872,7 +1884,9 @@ function applyFilters() {
     const textMatch = !q || title.includes(q) || meta.includes(q) || preview.includes(q);
     const hasName = el.dataset.hasName === '1';
     const nameMatch = !hideUnnamed || hasName;
-    el.style.display = (typeMatch && textMatch && nameMatch) ? '' : 'none';
+    const isAbandoned = el.classList.contains('is-ancestor') && !!el.closest('.fork-group');
+    const abandonedMatch = !hideAbandoned || !isAbandoned;
+    el.style.display = (typeMatch && textMatch && nameMatch && abandonedMatch) ? '' : 'none';
   });
   // Hide fork groups whose children are all hidden; auto-expand when filtering
   $$('.fork-group').forEach(group => {
