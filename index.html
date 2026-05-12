@@ -1623,7 +1623,7 @@ async function loadSession(session) {
   const customTitle = data.metadata?.title || session.customTitle || '';
   const slug = session.slug || '';
   const displayTitle = customTitle || slug || session.firstMessage || session.id;
-  const idTag = `<span class="copy-session-id" title="点击复制" style="color:var(--text-dim);font-size:12px;font-weight:400;cursor:pointer;margin-left:6px" data-id="${session.id}">${session.id.substring(0,8)}</span>`;
+  const idTag = `<span class="copy-session-id" title="${session.path}" style="color:var(--text-dim);font-size:12px;font-weight:400;cursor:pointer;margin-left:6px" data-path="${session.path}">${session.id.substring(0,8)}</span>`;
   $('#sessionTitle').innerHTML = customTitle
     ? `<span style="color:#4ade80">${escapeHtml(customTitle)}</span> ${idTag}`
     : slug
@@ -1631,7 +1631,7 @@ async function loadSession(session) {
       : `${escapeHtml(displayTitle)} ${idTag}`;
   $('#sessionTitle').querySelector('.copy-session-id')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(e.target.dataset.id);
+    navigator.clipboard.writeText(e.target.dataset.path);
     const orig = e.target.textContent;
     e.target.textContent = '已复制!';
     e.target.style.color = '#4ade80';
