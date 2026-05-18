@@ -212,11 +212,13 @@ class SessionHandler(SimpleHTTPRequestHandler):
                         display = "~" + real_path[len(home):]
                     else:
                         display = real_path
+                    last_modified = max(f.stat().st_mtime for f in jsonls)
                     projects.append({
                         "id": d.name,
                         "name": display,
                         "fullPath": real_path,
                         "sessions": jsonl_count,
+                        "lastModified": last_modified,
                     })
         return projects
 
