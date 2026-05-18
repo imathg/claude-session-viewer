@@ -761,23 +761,13 @@ body {
   border-color: var(--accent2);
 }
 
-/* Worktree nesting */
-.worktree-list {
-  display: none;
-  border-left: 2px solid rgba(34, 197, 94, 0.25);
-  margin-left: 14px;
-}
-.worktree-list.show { display: block; }
-
-.worktree-list .project-item { border-bottom: 1px solid rgba(255,255,255,0.03); }
-.worktree-list .project-item:last-child { border-bottom: none; }
-
-.worktree-list .project-header {
-  padding: 10px 12px 10px 10px;
+/* Worktree nodes inline with sessions */
+.session-list .worktree-item .project-header {
+  padding: 10px 12px 10px 18px;
   font-size: 12px;
+  border-left: 2px solid rgba(34, 197, 94, 0.25);
 }
-
-.worktree-list .project-header .name { color: #86efac; }
+.session-list .worktree-item .project-header .name { color: #86efac; }
 
 .project-header .wt-count {
   color: #86efac;
@@ -1361,28 +1351,27 @@ async function loadProjects() {
     return;
   }
 
-  // Group `.claude/worktrees/<name>` projects under their parent project so
-  // the worktree identifier isn't crowded out by the shared path prefix.
-  const byPath = new Map(projects.map(p => [p.fullPath, p]));
+  // Group worktree projects under their parent using the project directory name
+  // (id) rather than fullPath. The id encodes the original worktree identity
+  // reliably, whereas fullPath (from cwd) can drift when a session switches
+  // worktrees at runtime.
+  const byId = new Map(projects.map(p => [p.id, p]));
   const childrenOf = new Map();
   const worktreeIds = new Set();
   for (const p of projects) {
-    const m = p.fullPath && p.fullPath.match(/^(.+)\/\.claude\/worktrees\/([^/]+)$/);
-    if (m && byPath.has(m[1])) {
-      const parent = byPath.get(m[1]);
+    const m = p.id.match(/^(.+)--claude-worktrees-(.+)$/);
+    if (m && byId.has(m[1])) {
+      const parent = byId.get(m[1]);
       if (!childrenOf.has(parent.id)) childrenOf.set(parent.id, []);
       childrenOf.get(parent.id).push({ ...p, worktreeName: m[2] });
       worktreeIds.add(p.id);
     }
   }
 
-  let firstToExpand = null;
   for (const proj of projects) {
     if (worktreeIds.has(proj.id)) continue;
     sidebar.appendChild(buildProjectNode(proj, childrenOf.get(proj.id) || []));
-    if (!firstToExpand) firstToExpand = proj;
   }
-  if (firstToExpand) toggleProject(firstToExpand.id);
 }
 
 function buildProjectNode(proj, worktrees) {
@@ -1403,19 +1392,15 @@ function buildProjectNode(proj, worktrees) {
     <div class="session-list" id="sessions-${proj.id}"></div>
   `;
   item.querySelector('.project-header').addEventListener('click', () => toggleProject(proj.id));
-  if (worktrees.length) {
-    const wtList = document.createElement('div');
-    wtList.className = 'worktree-list';
-    for (const w of worktrees) wtList.appendChild(buildWorktreeNode(w));
-    item.appendChild(wtList);
-  }
+  if (worktrees.length) item._worktrees = worktrees;
   return item;
 }
 
 function buildWorktreeNode(proj) {
   const item = document.createElement('div');
   item.className = 'project-item worktree-item';
-  const nameHtml = `<span class="wt-icon">🌿</span><span style="font-weight:600">${escapeHtml(proj.worktreeName)}</span>`;
+  const shortName = proj.worktreeName.replace(/-[0-9a-f]{6,}$/, '');
+  const nameHtml = `<span class="wt-icon">🌿</span><span style="font-weight:600" title="${escapeHtml(proj.worktreeName)}">${escapeHtml(shortName)}</span>`;
   item.innerHTML = `
     <div class="project-header" data-project="${proj.id}">
       <span class="arrow">▶</span>
@@ -1432,18 +1417,15 @@ async function toggleProject(projectId) {
   const header = $(`.project-header[data-project="${projectId}"]`);
   const list = $(`#sessions-${projectId}`);
   const item = header.closest('.project-item');
-  const wtList = item ? item.querySelector(':scope > .worktree-list') : null;
 
   if (header.classList.contains('expanded')) {
     header.classList.remove('expanded');
     list.classList.remove('show');
-    if (wtList) wtList.classList.remove('show');
     return;
   }
 
   header.classList.add('expanded');
   list.classList.add('show');
-  if (wtList) wtList.classList.add('show');
 
   if (list.children.length > 0) return;
 
@@ -1509,10 +1491,17 @@ async function toggleProject(projectId) {
     entries.push({ kind: 'group', root, sessions: ordered, ancestor, groupTitle, sortKey });
   }
   for (const s of singletons) entries.push({ kind: 'single', session: s, sortKey: s.modified });
+  // Interleave worktree nodes sorted by latest session time
+  const worktrees = item ? (item._worktrees || []) : [];
+  for (const w of worktrees) {
+    entries.push({ kind: 'worktree', worktree: w, sortKey: w.lastModified || 0 });
+  }
   entries.sort((a, b) => b.sortKey - a.sortKey);
 
   for (const e of entries) {
-    if (e.kind === 'single') {
+    if (e.kind === 'worktree') {
+      list.appendChild(buildWorktreeNode(e.worktree));
+    } else if (e.kind === 'single') {
       list.appendChild(buildSessionItem(e.session, projectId));
     } else {
       const ancestor = e.ancestor;
