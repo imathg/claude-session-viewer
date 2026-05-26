@@ -1473,24 +1473,23 @@ async function toggleProject(projectId) {
   // singletons by their own mtime. Sort by that, newest first.
   const entries = [];
   for (const [root, arr] of groups.entries()) {
-    // Label = most common customTitle across members (shared family identity).
-    const titleCounts = new Map();
-    for (const s of arr) if (s.customTitle) titleCounts.set(s.customTitle, (titleCounts.get(s.customTitle) || 0) + 1);
-    let groupTitle = '';
-    let best = 0;
-    for (const [t, n] of titleCounts) if (n > best) { best = n; groupTitle = t; }
-    // Ancestor: prefer a rootless member with matching group title, else any rootless,
-    // else the oldest. Place ancestor first, rest newest-first.
+    // Ancestor: prefer a rootless member, then isForkOrigin (session that
+    // contains the forkRoot UUID as its own message), else null.
     const rootless = arr.filter(s => !s.forkRoot);
-    const ancestor = rootless.find(s => s.customTitle === groupTitle)
-                  || rootless[0]
-                  || arr.reduce((a, b) => a.modified < b.modified ? a : b);
-    const rest = arr.filter(s => s !== ancestor).sort((a, b) => b.modified - a.modified);
-    const ordered = [ancestor, ...rest];
-    const sortKey = Math.max(...arr.map(s => s.modified));
+    const ancestor = rootless[0] || arr.find(s => s.isForkOrigin) || null;
+    // Label = ancestor's title (the root session defines the group identity).
+    const groupTitle = (ancestor && ancestor.customTitle) || (() => {
+      let t = '', best = 0;
+      for (const s of arr) if (s.customTitle && (s.lastQueryTs || s.modified) > best) { best = (s.lastQueryTs || s.modified); t = s.customTitle; }
+      return t;
+    })();
+    // Sort non-ancestor members by last query time, newest first.
+    const rest = arr.filter(s => s !== ancestor).sort((a, b) => (b.lastQueryTs || b.modified) - (a.lastQueryTs || a.modified));
+    const ordered = ancestor ? [ancestor, ...rest] : rest;
+    const sortKey = Math.max(...arr.map(s => s.lastQueryTs || s.modified));
     entries.push({ kind: 'group', root, sessions: ordered, ancestor, groupTitle, sortKey });
   }
-  for (const s of singletons) entries.push({ kind: 'single', session: s, sortKey: s.modified });
+  for (const s of singletons) entries.push({ kind: 'single', session: s, sortKey: s.lastQueryTs || s.modified });
   // Interleave worktree nodes sorted by latest session time
   const worktrees = item ? (item._worktrees || []) : [];
   for (const w of worktrees) {

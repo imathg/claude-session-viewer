@@ -233,10 +233,12 @@ class SessionHandler(SimpleHTTPRequestHandler):
         sessions = []
         for f in sorted(project_dir.glob("*.jsonl"), key=lambda x: x.stat().st_mtime, reverse=True):
             stat = f.stat()
-            custom_title, first_msg, last_msg, slug, entrypoint, session_type, fork_root, first_msg_uuid = self._extract_title(f)
+            custom_title, first_msg, last_msg, slug, entrypoint, session_type, fork_root, first_msg_uuid, is_fork_origin, last_query_ts = self._extract_title(f)
             app_info = app_meta.get(f.stem, {})
-            # Prefer Claude app's user-edited title if the JSONL didn't have one
-            if not custom_title and app_info.get("title"):
+            # Claude app's user-edited title (titleSource=user) is the latest
+            # rename — it should override the JSONL custom-title which may be
+            # inherited from a parent fork.
+            if app_info.get("title"):
                 custom_title = app_info["title"]
             # Skip sessions with no real user input (e.g., only `Unknown command: /x`
             # or raw <command-message> that parsed to nothing) and no user-set title.
@@ -247,6 +249,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
                 "path": str(f),
                 "size": stat.st_size,
                 "modified": stat.st_mtime,
+                "lastQueryTs": last_query_ts or stat.st_mtime,
                 "customTitle": custom_title,
                 "firstMessage": first_msg,
                 "lastMessage": last_msg,
@@ -256,6 +259,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
                 "isArchived": app_info.get("isArchived", False),
                 "forkRoot": fork_root,
                 "firstMsgUuid": first_msg_uuid,
+                "isForkOrigin": is_fork_origin,
             })
         return sessions
 
@@ -309,6 +313,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
         custom_title = ""
         first_user_msg = ""
         last_user_msg = ""
+        last_query_ts = 0.0
         entrypoint = ""
         slug = ""
         session_type = "manual"  # "manual" or "scheduled"
@@ -316,6 +321,9 @@ class SessionHandler(SimpleHTTPRequestHandler):
         # forked from. Sessions sharing it are siblings (fork/compact from same parent).
         fork_root = ""
         first_msg_uuid = ""
+        is_fork_origin = False
+        session_id = filepath.stem if isinstance(filepath, Path) else Path(filepath).stem
+        uuid_to_sid = {}
         try:
             with open(filepath, "r") as f:
                 for line in f:
@@ -328,12 +336,17 @@ class SessionHandler(SimpleHTTPRequestHandler):
                         slug = obj.get("slug", "")
                     if not fork_root and obj.get("logicalParentUuid"):
                         fork_root = obj.get("logicalParentUuid", "")
+                    uuid_val = obj.get("uuid", "")
+                    sid_val = obj.get("sessionId", "")
+                    if uuid_val and sid_val:
+                        uuid_to_sid[uuid_val] = sid_val
                     if obj.get("type") == "user":
                         # Skip meta messages (isMeta, local-command-caveat, etc.)
                         if obj.get("isMeta"):
                             continue
                         if not first_msg_uuid and obj.get("uuid"):
                             first_msg_uuid = obj["uuid"]
+                        ts = obj.get("timestamp", "")
                         content = obj.get("message", {}).get("content", "")
                         raw_text = ""
                         if isinstance(content, str):
@@ -368,9 +381,17 @@ class SessionHandler(SimpleHTTPRequestHandler):
                             if not first_user_msg:
                                 first_user_msg = text[:100]
                             last_user_msg = text
+                            if ts:
+                                try:
+                                    from datetime import datetime, timezone
+                                    last_query_ts = datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+                                except Exception:
+                                    pass
         except Exception:
             pass
-        return custom_title, first_user_msg, last_user_msg, slug, entrypoint, session_type, fork_root, first_msg_uuid
+        if fork_root and uuid_to_sid.get(fork_root) == session_id:
+            is_fork_origin = True
+        return custom_title, first_user_msg, last_user_msg, slug, entrypoint, session_type, fork_root, first_msg_uuid, is_fork_origin, last_query_ts
 
     def _read_session(self, filepath):
         claude_dir = get_claude_dir()
