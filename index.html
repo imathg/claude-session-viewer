@@ -969,7 +969,7 @@ body {
       <button class="filter-pill" data-filter="scheduled" onclick="setFilter('scheduled')">定时任务</button>
       <button class="filter-pill" data-filter="archived" onclick="setFilter('archived')">已归档</button>
       <button class="filter-pill toggle-pill" id="hideUnnamedToggle" onclick="toggleHideUnnamed()" title="隐藏没有自定义标题的会话">仅命名</button>
-      <button class="filter-pill toggle-pill" id="hideAbandonedToggle" onclick="toggleHideAbandoned()" title="隐藏被 fork 后废弃的原始会话">隐藏废弃</button>
+      <button class="filter-pill toggle-pill" id="hideAbandonedToggle" onclick="toggleHideAbandoned()" title="隐藏被 fork 后 48 小时未再活动的原始会话">隐藏废弃</button>
     </div>
     <div class="sidebar-content" id="sidebarContent">
       <div class="loading">加载中</div>
@@ -1541,6 +1541,7 @@ function buildSessionItem(s, projectId, groupLabel = '', isAncestor = false) {
   item.dataset.sessionType = s.sessionType || 'manual';
   item.dataset.archived = s.isArchived ? '1' : '0';
   item.dataset.hasName = (s.customTitle || s.slug) ? '1' : '0';
+  item.dataset.lastActivity = String(s.lastQueryTs || s.modified || 0);
 
   const date = new Date(s.modified * 1000);
   const dateStr = date.toLocaleDateString('zh-CN') + ' ' + date.toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
@@ -1872,7 +1873,13 @@ function applyFilters() {
     const textMatch = !q || title.includes(q) || meta.includes(q) || preview.includes(q);
     const hasName = el.dataset.hasName === '1';
     const nameMatch = !hideUnnamed || hasName;
-    const isAbandoned = el.classList.contains('is-ancestor') && !!el.closest('.fork-group');
+    // "废弃" = 在 fork group 里的 ancestor，并且自身已超过 48h 没有新活动。
+    // 这样 root 如果还在被用，就不会被自动藏掉。
+    const ABANDON_THRESHOLD_SEC = 48 * 3600;
+    const nowSec = Date.now() / 1000;
+    const lastActivity = parseFloat(el.dataset.lastActivity || '0');
+    const stale = lastActivity > 0 && (nowSec - lastActivity) > ABANDON_THRESHOLD_SEC;
+    const isAbandoned = el.classList.contains('is-ancestor') && !!el.closest('.fork-group') && stale;
     const abandonedMatch = !hideAbandoned || !isAbandoned;
     el.style.display = (typeMatch && textMatch && nameMatch && abandonedMatch) ? '' : 'none';
   });
