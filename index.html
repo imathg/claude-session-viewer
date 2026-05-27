@@ -906,6 +906,164 @@ body {
   box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.4);
 }
 
+/* Pinned button (sidebar header) */
+.sidebar-header .pinned-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.sidebar-header .pinned-btn:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+.sidebar-header .pinned-btn.active { color: #f59e0b; border-color: #f59e0b; background: rgba(245, 158, 11, 0.08); }
+.sidebar-header .pinned-btn .pin-count {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-left: 2px;
+}
+/* When the pin button is the second control, demote settings btn margin */
+.sidebar-header .pinned-btn + .settings-btn { margin-left: 6px; }
+
+/* Pin indicator on session-item */
+.session-item .pin-indicator {
+  color: #f59e0b;
+  margin-left: 4px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.session-item.has-pin { box-shadow: inset 3px 0 0 rgba(245, 158, 11, 0.55); }
+.session-item.has-pin .title::before {
+  content: '🔔 ';
+  font-size: 11px;
+  color: #f59e0b;
+}
+
+/* Pinned-view (main area takeover) */
+.pinned-view {
+  display: none;
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 28px;
+}
+.pinned-view.show { display: block; }
+.pinned-view .pv-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.pinned-view .pv-title { font-size: 18px; font-weight: 600; color: var(--text); }
+.pinned-view .pv-subtitle { font-size: 12px; color: var(--text-dim); }
+.pinned-view .pv-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.pinned-view .pv-empty .icon { font-size: 32px; opacity: 0.4; margin-bottom: 12px; }
+.pinned-view .pv-session-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.pinned-view .pv-session-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.pinned-view .pv-session-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #4ade80;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pinned-view .pv-session-title.unset { color: var(--text-dim); font-style: italic; font-weight: 400; }
+.pinned-view .pv-session-project {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pinned-view .pv-open-session-btn {
+  background: var(--accent2);
+  color: white;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pinned-view .pv-open-session-btn:hover { opacity: 0.85; }
+
+.pinned-view .pv-chapter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(245, 158, 11, 0.06);
+  border-left: 3px solid #f59e0b;
+  border-radius: 0 6px 6px 0;
+  margin-top: 6px;
+}
+.pinned-view .pv-chapter-icon { color: #f59e0b; font-size: 12px; flex-shrink: 0; }
+.pinned-view .pv-chapter-title {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pinned-view .pv-jump-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pinned-view .pv-jump-btn:hover { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border-color: #f59e0b; }
+.pinned-view .pv-jump-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Highlight a message after jump-to-pin */
+.message-wrapper.pin-flash .message-inner {
+  outline: 2px solid #f59e0b;
+  outline-offset: 6px;
+  border-radius: 12px;
+  animation: pinFlash 2.4s ease-out;
+}
+@keyframes pinFlash {
+  0%   { outline-color: #f59e0b; box-shadow: 0 0 24px rgba(245, 158, 11, 0.65); }
+  60%  { outline-color: #f59e0b; box-shadow: 0 0 12px rgba(245, 158, 11, 0.35); }
+  100% { outline-color: transparent; box-shadow: none; }
+}
+
 /* Scroll-to-top button */
 .scroll-top-btn {
   position: absolute;
@@ -949,6 +1107,9 @@ body {
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
       </svg>
       Session Viewer
+      <button class="pinned-btn" id="pinnedBtn" onclick="togglePinnedView()" title="查看所有 pin 过的对话">
+        🔔 <span>Pinned</span><span class="pin-count" id="pinnedCount" style="display:none">0</span>
+      </button>
       <button class="settings-btn" id="settingsBtn" onclick="toggleConfig()" title="配置路径">&#9881;</button>
     </div>
     <div class="config-panel" id="configPanel">
@@ -1007,6 +1168,15 @@ body {
         选择一个 session 查看对话
       </div>
     </div>
+    <div class="pinned-view" id="pinnedView">
+      <div class="pv-header">
+        <span class="pv-title">🔔 已收藏的回复</span>
+        <span class="pv-subtitle" id="pinnedSubtitle"></span>
+        <span style="flex:1"></span>
+        <button class="btn-small" onclick="hidePinnedView()">关闭</button>
+      </div>
+      <div id="pinnedListBody"></div>
+    </div>
     <button class="scroll-top-btn" id="scrollTopBtn" onclick="scrollToTop()" title="回到顶部">↑</button>
     <button class="scroll-bottom-btn" id="scrollBottomBtn" onclick="scrollToBottom()" title="跳到最新">↓</button>
   </div>
@@ -1020,6 +1190,9 @@ const $$ = (sel, parent) => (parent || document).querySelectorAll(sel);
 let allSessions = {};
 let currentMessages = []; // store parsed messages for export
 let exportMode = false;
+let allPins = [];             // list of pinned sessions returned by /api/pins
+let pinnedSessionPaths = new Set(); // sessionPath strings that have ≥1 pin (for sidebar badge)
+let pendingJumpUuid = null;   // when set, loadSession will scroll+flash this uuid after render
 
 // ── Toast ──
 function showToast(text) {
@@ -1311,6 +1484,142 @@ async function applyPath() {
   }
 }
 
+// ── Pinned conversations ──
+async function loadPins() {
+  try {
+    const pins = await fetch('/api/pins').then(r => r.json());
+    allPins = Array.isArray(pins) ? pins : [];
+  } catch (e) {
+    allPins = [];
+  }
+  const totalChapters = allPins.reduce((acc, p) => acc + (p.chapters?.length || 0), 0);
+  const countEl = $('#pinnedCount');
+  if (totalChapters > 0) {
+    countEl.textContent = String(totalChapters);
+    countEl.style.display = '';
+  } else {
+    countEl.style.display = 'none';
+  }
+  // Refresh sidebar badges (any session already rendered)
+  for (const p of allPins) {
+    if (p.sessionPath) pinnedSessionPaths.add(p.sessionPath);
+    const items = $$(`.session-item[data-path="${cssEscape(p.sessionPath)}"]`);
+    items.forEach(el => {
+      el.classList.add('has-pin');
+      el.dataset.pinCount = String(p.chapters?.length || 0);
+    });
+  }
+}
+
+function cssEscape(s) {
+  // Lightweight CSS attribute-selector escaping for paths (which may contain ", \, special chars)
+  if (window.CSS && CSS.escape) return CSS.escape(s);
+  return String(s).replace(/(["\\])/g, '\\$1');
+}
+
+function togglePinnedView() {
+  const view = $('#pinnedView');
+  if (view.classList.contains('show')) {
+    hidePinnedView();
+  } else {
+    showPinnedView();
+  }
+}
+
+function showPinnedView() {
+  $('#chatContainer').style.display = 'none';
+  $('#mainHeader').style.display = 'none';
+  $('#exportToolbar').classList.remove('show');
+  $('#findBar').classList.remove('show');
+  $('#pinnedBtn').classList.add('active');
+  const view = $('#pinnedView');
+  view.classList.add('show');
+  renderPinnedView();
+}
+
+function hidePinnedView() {
+  $('#pinnedView').classList.remove('show');
+  $('#chatContainer').style.display = '';
+  $('#pinnedBtn').classList.remove('active');
+  // Show main header again if a session is loaded
+  if (currentMessages.length > 0) {
+    $('#mainHeader').style.display = 'flex';
+  }
+}
+
+function renderPinnedView() {
+  const total = allPins.reduce((acc, p) => acc + (p.chapters?.length || 0), 0);
+  $('#pinnedSubtitle').textContent = total
+    ? `${total} 条 pin · ${allPins.length} 个会话`
+    : '';
+  const body = $('#pinnedListBody');
+  body.innerHTML = '';
+  if (allPins.length === 0) {
+    body.innerHTML = `
+      <div class="pv-empty">
+        <div class="icon">🔔</div>
+        <div>暂无 pin 过的对话</div>
+        <div style="font-size:12px;margin-top:8px">
+          在 Claude desktop 里点击消息上的铃铛图标即可 pin 一条回复，<br>
+          刷新本页就能在这里看到。
+        </div>
+      </div>`;
+    return;
+  }
+  for (const p of allPins) {
+    const card = document.createElement('div');
+    card.className = 'pv-session-card';
+    const hasSession = !!p.sessionPath;
+    const titleText = p.sessionTitle || p.firstMessage || (hasSession ? '(未命名会话)' : '(会话尚未同步到磁盘)');
+    const titleClass = (p.sessionTitle || p.firstMessage) ? '' : 'unset';
+    const projectText = p.projectPath || (p.cliSessionId ? p.cliSessionId.substring(0, 8) : p.localId);
+    let inner = `
+      <div class="pv-session-head">
+        <span class="pv-session-title ${titleClass}" title="${escapeAttr(titleText)}">${escapeHtml(titleText)}</span>
+        ${hasSession ? `<button class="pv-open-session-btn" data-path="${escapeAttr(p.sessionPath)}">打开会话</button>` : ''}
+      </div>
+      <div class="pv-session-project" title="${escapeAttr(projectText)}">📁 ${escapeHtml(projectText)}</div>
+    `;
+    for (const c of (p.chapters || [])) {
+      const jumpDisabled = !c.msgUuid || !hasSession;
+      inner += `
+        <div class="pv-chapter">
+          <span class="pv-chapter-icon">🔔</span>
+          <span class="pv-chapter-title" title="${escapeAttr(c.title || '(无标题)')}">${escapeHtml(c.title || '(无标题)')}</span>
+          <button class="pv-jump-btn" data-path="${escapeAttr(p.sessionPath)}" data-uuid="${escapeAttr(c.msgUuid || '')}" ${jumpDisabled ? 'disabled' : ''} title="${jumpDisabled ? '该消息无法定位（会话未同步或锚点丢失）' : '跳转到该消息'}">跳转</button>
+        </div>
+      `;
+    }
+    card.innerHTML = inner;
+    card.querySelectorAll('.pv-open-session-btn').forEach(btn => {
+      btn.addEventListener('click', () => jumpToSession(btn.dataset.path, ''));
+    });
+    card.querySelectorAll('.pv-jump-btn').forEach(btn => {
+      if (btn.disabled) return;
+      btn.addEventListener('click', () => jumpToSession(btn.dataset.path, btn.dataset.uuid));
+    });
+    body.appendChild(card);
+  }
+}
+
+async function jumpToSession(sessionPath, msgUuid) {
+  if (!sessionPath) return;
+  hidePinnedView();
+  // Ensure the project that owns this session is expanded so its session list exists.
+  // Simplest path: fabricate a minimal session object the loader needs.
+  pendingJumpUuid = msgUuid || null;
+  // Try to locate the existing list item so the sidebar selection stays in sync
+  const existing = document.querySelector(`.session-item[data-path="${cssEscape(sessionPath)}"]`);
+  if (existing) {
+    // Trigger via click so any expand-parent side effects run
+    existing.click();
+    return;
+  }
+  // Otherwise call loadSession directly. We don't know all metadata; loadSession will
+  // re-read what it needs from /api/session, but we need basic fields for the header.
+  await loadSession({ path: sessionPath, id: '', customTitle: '', firstMessage: '', slug: '' });
+}
+
 // ── Init & data loading ──
 async function init() {
   // Restore persisted toggle state
@@ -1326,6 +1635,7 @@ async function init() {
       $('#configStatus').className = 'config-status ok';
     }
     loadProjects();
+    loadPins();
   } else {
     // Show config panel and no-config state
     $('#configPanel').classList.add('show');
@@ -1535,7 +1845,9 @@ function buildSessionItem(s, projectId, groupLabel = '', isAncestor = false) {
   if (s.sessionType === 'scheduled') classes.push('scheduled');
   if (s.isArchived) classes.push('archived');
   if (isAncestor) classes.push('is-ancestor');
+  if (s.pinCount > 0) { classes.push('has-pin'); pinnedSessionPaths.add(s.path); }
   item.className = classes.join(' ');
+  item.dataset.pinCount = String(s.pinCount || 0);
   item.dataset.path = s.path;
   item.dataset.project = projectId;
   item.dataset.sessionType = s.sessionType || 'manual';
@@ -1567,6 +1879,7 @@ function buildSessionItem(s, projectId, groupLabel = '', isAncestor = false) {
   const previewHtml = previewText ? `<div class="preview" title="${escapeHtml(previewText)}">${escapeHtml(previewText)}</div>` : '';
 
   const ancestorTag = isAncestor ? `<span class="ancestor-tag" title="被 fork 的原始会话">🌱 起点</span>` : '';
+  const pinTag = s.pinCount > 0 ? `<span class="pin-indicator" title="本会话有 ${s.pinCount} 条 pin">🔔${s.pinCount}</span>` : '';
   item.innerHTML = `
     ${titleBlock}
     ${previewHtml}
@@ -1575,6 +1888,7 @@ function buildSessionItem(s, projectId, groupLabel = '', isAncestor = false) {
       <span>${sizeStr}</span>
       <span class="session-id-short" title="点击复制完整 Session ID: ${s.id}" style="opacity:0.6;cursor:pointer">${s.id.substring(0, 8)}</span>
       ${ancestorTag}
+      ${pinTag}
     </div>
   `;
   item.querySelector('.session-id-short').addEventListener('click', (e) => {
@@ -1638,8 +1952,28 @@ async function loadSession(session) {
   chat.innerHTML = '';
   currentRenderedGroups = [];
   renderMessages(chat, data.messages);
-  // Scroll to bottom to show latest progress
-  chat.scrollTop = chat.scrollHeight;
+  // Scroll to bottom to show latest progress (unless we're about to jump to a pin)
+  if (pendingJumpUuid) {
+    const target = pendingJumpUuid;
+    pendingJumpUuid = null;
+    // Defer one task so layout settles, then scroll+flash.
+    // (Don't use requestAnimationFrame — it can be throttled in background tabs.)
+    setTimeout(() => flashMessageByUuid(target), 0);
+  } else {
+    chat.scrollTop = chat.scrollHeight;
+  }
+}
+
+function flashMessageByUuid(uuid) {
+  if (!uuid) return;
+  const el = document.querySelector(`.message-wrapper[data-uuids~="${cssEscape(uuid)}"]`);
+  if (!el) { showToast('未找到对应消息（可能已被剪枝）'); return; }
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  el.classList.remove('pin-flash');
+  // Force reflow so the animation restarts when jumping repeatedly
+  void el.offsetWidth;
+  el.classList.add('pin-flash');
+  setTimeout(() => el.classList.remove('pin-flash'), 2500);
 }
 
 function renderMessages(container, messages) {
@@ -1666,6 +2000,7 @@ function renderMessages(container, messages) {
 
         const wrapper = document.createElement('div');
         wrapper.className = 'message-wrapper user-wrapper';
+        if (msg.uuid) wrapper.dataset.uuids = msg.uuid;
         wrapper.innerHTML = `
           <input type="checkbox" class="msg-checkbox" data-group-idx="${groupIdx}" onchange="onCheckboxChange(this)">
           <div class="message-inner message user" data-group-idx="${groupIdx}">
@@ -1681,9 +2016,12 @@ function renderMessages(container, messages) {
       }
     } else if (msg.type === 'assistant') {
       const parts = [...(msg.parts || [])];
+      const groupUuids = [];
+      if (msg.uuid) groupUuids.push(msg.uuid);
       let j = i + 1;
       while (j < messages.length && messages[j].type === 'assistant') {
         parts.push(...(messages[j].parts || []));
+        if (messages[j].uuid) groupUuids.push(messages[j].uuid);
         j++;
       }
 
@@ -1731,6 +2069,7 @@ function renderMessages(container, messages) {
 
       const wrapper = document.createElement('div');
       wrapper.className = 'message-wrapper';
+      if (groupUuids.length) wrapper.dataset.uuids = groupUuids.join(' ');
       wrapper.innerHTML = `
         <input type="checkbox" class="msg-checkbox" data-group-idx="${groupIdx}" onchange="onCheckboxChange(this)">
         <div class="message-inner message assistant" data-group-idx="${groupIdx}">${innerHtml}</div>
