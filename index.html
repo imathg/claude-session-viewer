@@ -591,6 +591,12 @@ body {
   opacity: 0.7;
 }
 
+.session-item.headless .title { color: #facc15; }
+.session-item.headless .title::before {
+  content: '🔍 ';
+  opacity: 0.85;
+}
+
 /* Archived session styling */
 .session-item.archived {
   opacity: 0.55;
@@ -1128,6 +1134,7 @@ body {
       <button class="filter-pill active" data-filter="all" onclick="setFilter('all')">全部</button>
       <button class="filter-pill" data-filter="manual" onclick="setFilter('manual')">我的对话</button>
       <button class="filter-pill" data-filter="scheduled" onclick="setFilter('scheduled')">定时任务</button>
+      <button class="filter-pill" data-filter="headless" onclick="setFilter('headless')" title="无状态 SDK CLI 调用（破壁人 reader 等心跳任务）">🔍 心跳</button>
       <button class="filter-pill" data-filter="archived" onclick="setFilter('archived')">已归档</button>
       <button class="filter-pill toggle-pill" id="hideUnnamedToggle" onclick="toggleHideUnnamed()" title="隐藏没有自定义标题的会话">仅命名</button>
       <button class="filter-pill toggle-pill" id="hideAbandonedToggle" onclick="toggleHideAbandoned()" title="隐藏被 fork 后 48 小时未再活动的原始会话">隐藏废弃</button>
@@ -1843,6 +1850,7 @@ function buildSessionItem(s, projectId, groupLabel = '', isAncestor = false) {
   const item = document.createElement('div');
   const classes = ['session-item'];
   if (s.sessionType === 'scheduled') classes.push('scheduled');
+  if (s.sessionType === 'headless') classes.push('headless');
   if (s.isArchived) classes.push('archived');
   if (isAncestor) classes.push('is-ancestor');
   if (s.pinCount > 0) { classes.push('has-pin'); pinnedSessionPaths.add(s.path); }

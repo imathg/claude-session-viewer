@@ -653,7 +653,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
         last_query_ts = 0.0
         entrypoint = ""
         slug = ""
-        session_type = "manual"  # "manual" or "scheduled"
+        session_type = "manual"  # "manual" | "scheduled" | "headless"
         # `logicalParentUuid` on the first compact_boundary marks where this session
         # forked from. Sessions sharing it are siblings (fork/compact from same parent).
         fork_root = ""
@@ -735,6 +735,12 @@ class SessionHandler(SimpleHTTPRequestHandler):
             pass
         if fork_root and uuid_to_sid.get(fork_root) == session_id:
             is_fork_origin = True
+        # Headless one-shot calls (e.g. 破壁人 reader's `claude -p` heartbeats)
+        # come through entrypoint=sdk-cli and have no session continuity. They
+        # surface in the sidebar as 4 near-identical markdown-titled rows
+        # otherwise — mark them so the UI can icon/filter them separately.
+        if session_type == "manual" and entrypoint == "sdk-cli":
+            session_type = "headless"
         return custom_title, first_user_msg, last_user_msg, slug, entrypoint, session_type, fork_root, first_msg_uuid, is_fork_origin, last_query_ts
 
     def _read_session(self, filepath):
