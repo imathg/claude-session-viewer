@@ -665,8 +665,15 @@ class SessionHandler(SimpleHTTPRequestHandler):
             with open(filepath, "r") as f:
                 for line in f:
                     obj = json.loads(line)
-                    if obj.get("type") == "custom-title" and not custom_title:
-                        custom_title = obj.get("customTitle", "") or obj.get("title", "")
+                    if obj.get("type") == "custom-title":
+                        # Take the LAST custom-title event — JSONLs in a shared
+                        # conversation tree record the full rename history, and
+                        # the latest entry reflects the current name. (Earlier
+                        # logic took the first event, which surfaced typo'd
+                        # original titles on sibling forks.)
+                        latest = obj.get("customTitle", "") or obj.get("title", "")
+                        if latest:
+                            custom_title = latest
                     if not entrypoint and obj.get("entrypoint"):
                         entrypoint = obj.get("entrypoint", "")
                     if not slug and obj.get("slug"):
