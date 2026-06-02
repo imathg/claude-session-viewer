@@ -1156,10 +1156,10 @@ body {
       <div id="searchMode" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--text-dim);pointer-events:none"></div>
     </div>
     <div class="filter-bar">
-      <button class="filter-pill active" data-filter="all" onclick="setFilter('all')">全部</button>
+      <button class="filter-pill active" data-filter="all" onclick="setFilter('all')" title="全部对话（默认不含心跳，可点 🔍 心跳 单独查看）">全部</button>
       <button class="filter-pill" data-filter="manual" onclick="setFilter('manual')">我的对话</button>
       <button class="filter-pill" data-filter="scheduled" onclick="setFilter('scheduled')">定时任务</button>
-      <button class="filter-pill" data-filter="headless" onclick="setFilter('headless')" title="无状态 SDK CLI 调用（破壁人 reader 等心跳任务）">🔍 心跳</button>
+      <button class="filter-pill" data-filter="headless" onclick="setFilter('headless')" title="无状态 SDK CLI 调用（破壁人 reader 等心跳任务），默认不在「全部」中显示">🔍 心跳</button>
       <button class="filter-pill" data-filter="archived" onclick="setFilter('archived')">已归档</button>
       <button class="filter-pill toggle-pill" id="hideUnnamedToggle" onclick="toggleHideUnnamed()" title="隐藏没有自定义标题的会话">仅命名</button>
       <button class="filter-pill toggle-pill" id="hideAbandonedToggle" onclick="toggleHideAbandoned()" title="隐藏被 fork 后 48 小时未再活动的原始会话">隐藏废弃</button>
@@ -2284,7 +2284,9 @@ function applyFilters() {
     if (currentFilter === 'archived') {
       typeMatch = archived;
     } else if (currentFilter === 'all') {
-      typeMatch = !archived;
+      // 心跳 session（sdk-cli 无状态调用）默认不出现在「全部」里，
+      // 想看的话需要点 🔍 心跳 pill 切到 headless 视图。
+      typeMatch = !archived && type !== 'headless';
     } else {
       typeMatch = !archived && type === currentFilter;
     }
