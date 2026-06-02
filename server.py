@@ -888,7 +888,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
 
             if matches:
                 stat = f.stat()
-                custom_title, first_msg, last_msg, slug, entrypoint, session_type, fork_root, first_msg_uuid = self._extract_title(f)
+                custom_title, first_msg, last_msg, slug, entrypoint, session_type, fork_root, first_msg_uuid, _fo, _lq = self._extract_title(f)
                 app_info = app_meta.get(f.stem, {})
                 if not custom_title and app_info.get("title"):
                     custom_title = app_info["title"]
