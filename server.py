@@ -280,6 +280,9 @@ class SessionHandler(SimpleHTTPRequestHandler):
             project = qs.get("project", [""])[0]
             query = qs.get("q", [""])[0]
             self._json_response(self._search_sessions(project, query))
+        elif path == "/api/find-session":
+            session_id = qs.get("id", [""])[0]
+            self._json_response(self._find_session_by_id(session_id))
         elif path == "/api/pins":
             self._json_response(self._list_pins())
         elif path == "/" or path == "/index.html":
@@ -950,6 +953,62 @@ class SessionHandler(SimpleHTTPRequestHandler):
                 except Exception as e:
                     return {"ok": False, "error": str(e)}
         return {"ok": False, "error": f"未在 Claude app 数据中找到 session {session_id[:8]}"}
+
+    def _find_session_by_id(self, session_id):
+        """Find a session by full or partial ID (filename stem) across all projects.
+
+        Used by the sidebar search box when the input looks like a UUID — lets users
+        jump to a session they can't locate by title/project. Returns up to 10 matches.
+        """
+        session_id = (session_id or "").strip().lower()
+        if len(session_id) < 4:
+            return {"matches": []}
+        claude_dir = get_claude_dir()
+        if not claude_dir:
+            return {"matches": []}
+        projects_dir = claude_dir / "projects"
+        if not projects_dir.is_dir():
+            return {"matches": []}
+        hits = []
+        for proj in projects_dir.iterdir():
+            if not proj.is_dir():
+                continue
+            for jf in proj.glob("*.jsonl"):
+                stem = jf.stem.lower()
+                if stem == session_id or stem.startswith(session_id):
+                    hits.append((proj.name, jf))
+                    if len(hits) >= 10:
+                        break
+            if len(hits) >= 10:
+                break
+        if not hits:
+            return {"matches": []}
+        app_meta = load_app_session_meta()
+        home = str(Path.home())
+        results = []
+        for project_id, jf in hits:
+            stat = jf.stat()
+            custom_title, first_msg, _last, slug, entrypoint, session_type, _fr, _fmu, _fo, _lq = self._extract_title(jf)
+            app_info = app_meta.get(jf.stem, {})
+            if app_info.get("title"):
+                custom_title = app_info["title"]
+            real_path = self._read_cwd([jf]) or self._decode_dir_name(project_id)
+            project_display = ("~" + real_path[len(home):]) if real_path.startswith(home) else real_path
+            results.append({
+                "id": jf.stem,
+                "path": str(jf),
+                "project": project_id,
+                "projectDisplay": project_display,
+                "size": stat.st_size,
+                "modified": stat.st_mtime,
+                "customTitle": custom_title,
+                "firstMessage": first_msg,
+                "slug": slug,
+                "entrypoint": entrypoint,
+                "sessionType": session_type,
+                "isArchived": app_info.get("isArchived", False),
+            })
+        return {"matches": results}
 
     def log_message(self, format, *args):
         pass
