@@ -293,6 +293,10 @@ class SessionHandler(SimpleHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length)) if length else {}
             self._json_response(self._set_path(body.get("path", "")))
+        elif parsed.path == "/api/set-archived":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length)) if length else {}
+            self._json_response(self._set_archived(body.get("session_id", ""), body.get("archived", False)))
         else:
             self.send_error(404)
 
@@ -911,6 +915,41 @@ class SessionHandler(SimpleHTTPRequestHandler):
                 })
 
         return results
+
+    @staticmethod
+    def _set_archived(session_id, archived):
+        """Toggle isArchived on the Claude desktop app's local_<uuid>.json for a session.
+
+        Desktop app currently has no unarchive UI, so the viewer exposes it. The
+        metadata file is identified by its `cliSessionId` field; format on disk
+        is compact single-line JSON, so we round-trip with no indent.
+        """
+        if not session_id:
+            return {"ok": False, "error": "missing session_id"}
+        archived = bool(archived)
+        roots = [
+            Path.home() / "Library/Application Support/Claude/claude-code-sessions",
+            Path.home() / "Library/Application Support/Claude/local-agent-mode-sessions",
+        ]
+        for root in roots:
+            if not root.is_dir():
+                continue
+            for f in root.rglob("local_*.json"):
+                try:
+                    obj = json.loads(f.read_text())
+                except Exception:
+                    continue
+                if obj.get("cliSessionId") != session_id:
+                    continue
+                if bool(obj.get("isArchived")) == archived:
+                    return {"ok": True, "noChange": True}
+                obj["isArchived"] = archived
+                try:
+                    f.write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
+                    return {"ok": True, "path": str(f)}
+                except Exception as e:
+                    return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": f"未在 Claude app 数据中找到 session {session_id[:8]}"}
 
     def log_message(self, format, *args):
         pass
