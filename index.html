@@ -608,6 +608,31 @@ body {
   opacity: 0.7;
 }
 
+.session-item .unarchive-btn {
+  background: rgba(74, 222, 128, 0.08);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  color: #86efac;
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.session-item .unarchive-btn:hover {
+  background: rgba(74, 222, 128, 0.2);
+  color: #4ade80;
+  border-color: #4ade80;
+  opacity: 1;
+}
+.session-item .unarchive-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.session-item.archived:hover .unarchive-btn { opacity: 1; }
+.session-item.archived { opacity: 0.55; }
+.session-item.archived .unarchive-btn { opacity: 0.85; }
+
 /* Search */
 .search-box {
   padding: 12px 16px;
@@ -1131,10 +1156,10 @@ body {
       <div id="searchMode" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--text-dim);pointer-events:none"></div>
     </div>
     <div class="filter-bar">
-      <button class="filter-pill active" data-filter="all" onclick="setFilter('all')">全部</button>
+      <button class="filter-pill active" data-filter="all" onclick="setFilter('all')" title="全部对话（默认不含心跳，可点 🔍 心跳 单独查看）">全部</button>
       <button class="filter-pill" data-filter="manual" onclick="setFilter('manual')">我的对话</button>
       <button class="filter-pill" data-filter="scheduled" onclick="setFilter('scheduled')">定时任务</button>
-      <button class="filter-pill" data-filter="headless" onclick="setFilter('headless')" title="无状态 SDK CLI 调用（破壁人 reader 等心跳任务）">🔍 心跳</button>
+      <button class="filter-pill" data-filter="headless" onclick="setFilter('headless')" title="无状态 SDK CLI 调用（破壁人 reader 等心跳任务），默认不在「全部」中显示">🔍 心跳</button>
       <button class="filter-pill" data-filter="archived" onclick="setFilter('archived')">已归档</button>
       <button class="filter-pill toggle-pill" id="hideUnnamedToggle" onclick="toggleHideUnnamed()" title="隐藏没有自定义标题的会话">仅命名</button>
       <button class="filter-pill toggle-pill" id="hideAbandonedToggle" onclick="toggleHideAbandoned()" title="隐藏被 fork 后 48 小时未再活动的原始会话">隐藏废弃</button>
@@ -1888,6 +1913,9 @@ function buildSessionItem(s, projectId, groupLabel = '', isAncestor = false) {
 
   const ancestorTag = isAncestor ? `<span class="ancestor-tag" title="被 fork 的原始会话">🌱 起点</span>` : '';
   const pinTag = s.pinCount > 0 ? `<span class="pin-indicator" title="本会话有 ${s.pinCount} 条 pin">🔔${s.pinCount}</span>` : '';
+  const unarchiveBtn = s.isArchived
+    ? `<button class="unarchive-btn" title="取消归档（在 Claude desktop 里这条 session 会重新出现在常规列表）">↺ 取消归档</button>`
+    : '';
   item.innerHTML = `
     ${titleBlock}
     ${previewHtml}
@@ -1897,6 +1925,7 @@ function buildSessionItem(s, projectId, groupLabel = '', isAncestor = false) {
       <span class="session-id-short" title="点击复制完整 Session ID: ${s.id}" style="opacity:0.6;cursor:pointer">${s.id.substring(0, 8)}</span>
       ${ancestorTag}
       ${pinTag}
+      ${unarchiveBtn}
     </div>
   `;
   item.querySelector('.session-id-short').addEventListener('click', (e) => {
@@ -1908,8 +1937,50 @@ function buildSessionItem(s, projectId, groupLabel = '', isAncestor = false) {
     el.style.color = '#4ade80';
     setTimeout(() => { el.textContent = orig; el.style.color = ''; }, 1000);
   });
+  const unBtn = item.querySelector('.unarchive-btn');
+  if (unBtn) {
+    unBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      unarchiveSession(s.id, unBtn);
+    });
+  }
   item.addEventListener('click', () => loadSession(s));
   return item;
+}
+
+async function unarchiveSession(sessionId, btnEl) {
+  if (!sessionId || !btnEl || btnEl.disabled) return;
+  btnEl.disabled = true;
+  const orig = btnEl.textContent;
+  btnEl.textContent = '处理中…';
+  try {
+    const res = await fetch('/api/set-archived', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, archived: false }),
+    }).then(r => r.json());
+    if (!res.ok) {
+      showToast('取消归档失败: ' + (res.error || ''));
+      btnEl.disabled = false;
+      btnEl.textContent = orig;
+      return;
+    }
+    showToast(res.noChange ? '该 session 不是归档状态' : '已取消归档');
+    // Update every sidebar copy of this session (could appear in fork groups and ID-match cards).
+    document.querySelectorAll(`.session-item`).forEach(el => {
+      const path = el.dataset.path || '';
+      if (!path.endsWith('/' + sessionId + '.jsonl')) return;
+      el.classList.remove('archived');
+      el.dataset.archived = '0';
+      const b = el.querySelector('.unarchive-btn');
+      if (b) b.remove();
+    });
+    applyFilters();
+  } catch (e) {
+    showToast('请求失败: ' + e.message);
+    btnEl.disabled = false;
+    btnEl.textContent = orig;
+  }
 }
 
 async function loadSession(session) {
@@ -1937,8 +2008,11 @@ async function loadSession(session) {
   currentMessages = data.messages;
   const customTitle = data.metadata?.title || session.customTitle || '';
   const slug = session.slug || '';
-  const displayTitle = customTitle || slug || session.firstMessage || session.id;
-  const idTag = `<span class="copy-session-id" title="${session.path}" style="color:var(--text-dim);font-size:12px;font-weight:400;cursor:pointer;margin-left:6px" data-path="${session.path}">${session.id.substring(0,8)}</span>`;
+  // When loaded via jump-to-pin / session-id lookup, session.id may be empty.
+  // Derive it from the path basename so the copy-id chip always renders.
+  const sessionId = session.id || (session.path || '').split('/').pop().replace(/\.jsonl$/, '');
+  const displayTitle = customTitle || slug || session.firstMessage || sessionId;
+  const idTag = `<span class="copy-session-id" title="${session.path}" style="color:var(--text-dim);font-size:12px;font-weight:400;cursor:pointer;margin-left:6px" data-path="${session.path}">${sessionId.substring(0,8)}</span>`;
   $('#sessionTitle').innerHTML = customTitle
     ? `<span style="color:#4ade80">${escapeHtml(customTitle)}</span> ${idTag}`
     : slug
@@ -2210,7 +2284,9 @@ function applyFilters() {
     if (currentFilter === 'archived') {
       typeMatch = archived;
     } else if (currentFilter === 'all') {
-      typeMatch = !archived;
+      // 心跳 session（sdk-cli 无状态调用）默认不出现在「全部」里，
+      // 想看的话需要点 🔍 心跳 pill 切到 headless 视图。
+      typeMatch = !archived && type !== 'headless';
     } else {
       typeMatch = !archived && type === currentFilter;
     }
@@ -2433,13 +2509,126 @@ $('#chatContainer').addEventListener('scroll', () => {
   $('#scrollTopBtn').classList.toggle('show', distFromTop > 300);
 });
 
+// ── Session ID lookup (cross-project) ──
+// Triggered when the search box contains UUID-shaped text. The user has the
+// session id (e.g., from a previous link or Claude desktop) but doesn't know
+// which project owns it.
+function looksLikeSessionId(s) {
+  if (!s) return false;
+  // Strip dashes and check if it's 8+ hex chars. UUID is 32 hex + 4 dashes = 36.
+  const cleaned = s.replace(/-/g, '');
+  return /^[0-9a-f]{8,32}$/i.test(cleaned);
+}
+
+function isFullSessionId(s) {
+  return s.replace(/-/g, '').length >= 30;
+}
+
+function clearSessionIdResults() {
+  const existing = document.getElementById('sidIdMatches');
+  if (existing) existing.remove();
+}
+
+function renderSessionIdResults(matches, query) {
+  clearSessionIdResults();
+  const container = document.createElement('div');
+  container.id = 'sidIdMatches';
+  container.style.cssText = 'background:rgba(245,158,11,0.06); border-bottom:1px solid var(--border); padding:10px 14px;';
+  const header = matches.length
+    ? `🆔 Session ID 匹配 (${matches.length})`
+    : `🆔 未找到匹配 "${query}"`;
+  let html = `<div style="font-size:11px;color:#f59e0b;margin-bottom:8px;font-weight:600">${escapeHtml(header)}</div>`;
+  for (const m of matches) {
+    const title = m.customTitle || m.firstMessage || m.slug || m.id;
+    const date = new Date(m.modified * 1000);
+    const dateStr = date.toLocaleDateString('zh-CN') + ' ' + date.toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
+    html += `
+      <div class="sid-match" data-path="${escapeAttr(m.path)}" data-project="${escapeAttr(m.project)}" style="padding:8px 10px;cursor:pointer;border-radius:6px;margin-bottom:6px;background:rgba(245,158,11,0.05);border:1px solid rgba(245,158,11,0.18);">
+        <div style="font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px">${escapeHtml(title)}</div>
+        <div style="font-size:10px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📁 ${escapeHtml(m.projectDisplay || m.project)}</div>
+        <div style="font-size:10px;color:var(--text-dim);font-family:'SF Mono',monospace;margin-top:2px">${escapeHtml(m.id)} · ${dateStr}</div>
+      </div>`;
+  }
+  container.innerHTML = html;
+  container.querySelectorAll('.sid-match').forEach(el => {
+    el.addEventListener('click', () => openSessionByPath(el.dataset.project, el.dataset.path));
+    el.addEventListener('mouseenter', () => { el.style.background = 'rgba(245,158,11,0.12)'; });
+    el.addEventListener('mouseleave', () => { el.style.background = 'rgba(245,158,11,0.05)'; });
+  });
+  $('#sidebarContent').prepend(container);
+}
+
+async function openSessionByPath(projectId, sessionPath) {
+  if (!projectId || !sessionPath) return;
+  const header = $(`.project-header[data-project="${projectId}"]`);
+  if (header && !header.classList.contains('expanded')) {
+    await toggleProject(projectId);
+  }
+  const item = document.querySelector(`.session-item[data-path="${cssEscape(sessionPath)}"]`);
+  if (item) {
+    // Make sure it's visible even if a current pill filter would hide it
+    item.style.display = '';
+    const forkParent = item.closest('.fork-group');
+    if (forkParent) {
+      forkParent.style.display = '';
+      const fh = forkParent.querySelector('.fork-group-header');
+      const fc = forkParent.querySelector('.fork-group-children');
+      if (fh) fh.classList.add('expanded');
+      if (fc) fc.classList.add('show');
+    }
+    item.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    item.click();
+  } else {
+    await loadSession({ path: sessionPath, id: '', customTitle: '', firstMessage: '', slug: '' });
+  }
+}
+
+let sessionIdLookupSeq = 0;
+async function maybeSessionIdLookup(rawQuery) {
+  const q = rawQuery.trim();
+  if (!looksLikeSessionId(q)) {
+    clearSessionIdResults();
+    return false;
+  }
+  const seq = ++sessionIdLookupSeq;
+  $('#searchMode').textContent = 'Session ID 查找中...';
+  try {
+    const res = await fetch(`/api/find-session?id=${encodeURIComponent(q)}`).then(r => r.json());
+    if (seq !== sessionIdLookupSeq) return true; // newer query in flight
+    const matches = res.matches || [];
+    renderSessionIdResults(matches, q);
+    if (matches.length === 0) {
+      $('#searchMode').textContent = '未找到 ID';
+    } else if (matches.length === 1) {
+      $('#searchMode').textContent = '1 个匹配';
+      if (isFullSessionId(q)) {
+        const m = matches[0];
+        openSessionByPath(m.project, m.path);
+      }
+    } else {
+      $('#searchMode').textContent = `${matches.length} 个匹配`;
+    }
+  } catch (err) {
+    if (seq === sessionIdLookupSeq) $('#searchMode').textContent = '查找失败';
+  }
+  return true;
+}
+
 // Debounced title-only filter on input
 let searchTimer = null;
 $('#searchInput').addEventListener('input', (e) => {
-  const q = e.target.value.toLowerCase();
-  $('#searchMode').textContent = q ? '标题' : '';
+  const raw = e.target.value;
+  const q = raw.toLowerCase();
   // Clear full-text results, restore normal list
   $$('.search-result-item').forEach(el => el.remove());
+  clearTimeout(searchTimer);
+  if (looksLikeSessionId(raw.trim())) {
+    // Defer the network call slightly so typing doesn't fire on every keystroke
+    searchTimer = setTimeout(() => maybeSessionIdLookup(raw), 200);
+    return;
+  }
+  clearSessionIdResults();
+  $('#searchMode').textContent = q ? '标题' : '';
   applyFilters();
 });
 

@@ -280,6 +280,9 @@ class SessionHandler(SimpleHTTPRequestHandler):
             project = qs.get("project", [""])[0]
             query = qs.get("q", [""])[0]
             self._json_response(self._search_sessions(project, query))
+        elif path == "/api/find-session":
+            session_id = qs.get("id", [""])[0]
+            self._json_response(self._find_session_by_id(session_id))
         elif path == "/api/pins":
             self._json_response(self._list_pins())
         elif path == "/" or path == "/index.html":
@@ -293,6 +296,10 @@ class SessionHandler(SimpleHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length)) if length else {}
             self._json_response(self._set_path(body.get("path", "")))
+        elif parsed.path == "/api/set-archived":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length)) if length else {}
+            self._json_response(self._set_archived(body.get("session_id", ""), body.get("archived", False)))
         else:
             self.send_error(404)
 
@@ -888,7 +895,7 @@ class SessionHandler(SimpleHTTPRequestHandler):
 
             if matches:
                 stat = f.stat()
-                custom_title, first_msg, last_msg, slug, entrypoint, session_type, fork_root, first_msg_uuid = self._extract_title(f)
+                custom_title, first_msg, last_msg, slug, entrypoint, session_type, fork_root, first_msg_uuid, _fo, _lq = self._extract_title(f)
                 app_info = app_meta.get(f.stem, {})
                 if not custom_title and app_info.get("title"):
                     custom_title = app_info["title"]
@@ -911,6 +918,97 @@ class SessionHandler(SimpleHTTPRequestHandler):
                 })
 
         return results
+
+    @staticmethod
+    def _set_archived(session_id, archived):
+        """Toggle isArchived on the Claude desktop app's local_<uuid>.json for a session.
+
+        Desktop app currently has no unarchive UI, so the viewer exposes it. The
+        metadata file is identified by its `cliSessionId` field; format on disk
+        is compact single-line JSON, so we round-trip with no indent.
+        """
+        if not session_id:
+            return {"ok": False, "error": "missing session_id"}
+        archived = bool(archived)
+        roots = [
+            Path.home() / "Library/Application Support/Claude/claude-code-sessions",
+            Path.home() / "Library/Application Support/Claude/local-agent-mode-sessions",
+        ]
+        for root in roots:
+            if not root.is_dir():
+                continue
+            for f in root.rglob("local_*.json"):
+                try:
+                    obj = json.loads(f.read_text())
+                except Exception:
+                    continue
+                if obj.get("cliSessionId") != session_id:
+                    continue
+                if bool(obj.get("isArchived")) == archived:
+                    return {"ok": True, "noChange": True}
+                obj["isArchived"] = archived
+                try:
+                    f.write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
+                    return {"ok": True, "path": str(f)}
+                except Exception as e:
+                    return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": f"未在 Claude app 数据中找到 session {session_id[:8]}"}
+
+    def _find_session_by_id(self, session_id):
+        """Find a session by full or partial ID (filename stem) across all projects.
+
+        Used by the sidebar search box when the input looks like a UUID — lets users
+        jump to a session they can't locate by title/project. Returns up to 10 matches.
+        """
+        session_id = (session_id or "").strip().lower()
+        if len(session_id) < 4:
+            return {"matches": []}
+        claude_dir = get_claude_dir()
+        if not claude_dir:
+            return {"matches": []}
+        projects_dir = claude_dir / "projects"
+        if not projects_dir.is_dir():
+            return {"matches": []}
+        hits = []
+        for proj in projects_dir.iterdir():
+            if not proj.is_dir():
+                continue
+            for jf in proj.glob("*.jsonl"):
+                stem = jf.stem.lower()
+                if stem == session_id or stem.startswith(session_id):
+                    hits.append((proj.name, jf))
+                    if len(hits) >= 10:
+                        break
+            if len(hits) >= 10:
+                break
+        if not hits:
+            return {"matches": []}
+        app_meta = load_app_session_meta()
+        home = str(Path.home())
+        results = []
+        for project_id, jf in hits:
+            stat = jf.stat()
+            custom_title, first_msg, _last, slug, entrypoint, session_type, _fr, _fmu, _fo, _lq = self._extract_title(jf)
+            app_info = app_meta.get(jf.stem, {})
+            if app_info.get("title"):
+                custom_title = app_info["title"]
+            real_path = self._read_cwd([jf]) or self._decode_dir_name(project_id)
+            project_display = ("~" + real_path[len(home):]) if real_path.startswith(home) else real_path
+            results.append({
+                "id": jf.stem,
+                "path": str(jf),
+                "project": project_id,
+                "projectDisplay": project_display,
+                "size": stat.st_size,
+                "modified": stat.st_mtime,
+                "customTitle": custom_title,
+                "firstMessage": first_msg,
+                "slug": slug,
+                "entrypoint": entrypoint,
+                "sessionType": session_type,
+                "isArchived": app_info.get("isArchived", False),
+            })
+        return {"matches": results}
 
     def log_message(self, format, *args):
         pass
