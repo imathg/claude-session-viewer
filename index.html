@@ -1937,8 +1937,11 @@ async function loadSession(session) {
   currentMessages = data.messages;
   const customTitle = data.metadata?.title || session.customTitle || '';
   const slug = session.slug || '';
-  const displayTitle = customTitle || slug || session.firstMessage || session.id;
-  const idTag = `<span class="copy-session-id" title="${session.path}" style="color:var(--text-dim);font-size:12px;font-weight:400;cursor:pointer;margin-left:6px" data-path="${session.path}">${session.id.substring(0,8)}</span>`;
+  // When loaded via jump-to-pin / session-id lookup, session.id may be empty.
+  // Derive it from the path basename so the copy-id chip always renders.
+  const sessionId = session.id || (session.path || '').split('/').pop().replace(/\.jsonl$/, '');
+  const displayTitle = customTitle || slug || session.firstMessage || sessionId;
+  const idTag = `<span class="copy-session-id" title="${session.path}" style="color:var(--text-dim);font-size:12px;font-weight:400;cursor:pointer;margin-left:6px" data-path="${session.path}">${sessionId.substring(0,8)}</span>`;
   $('#sessionTitle').innerHTML = customTitle
     ? `<span style="color:#4ade80">${escapeHtml(customTitle)}</span> ${idTag}`
     : slug
