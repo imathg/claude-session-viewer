@@ -1984,6 +1984,10 @@ async function unarchiveSession(sessionId, btnEl) {
 }
 
 async function loadSession(session) {
+  // Leaving the pinned view: opening a session is an implicit "exit", so reset
+  // the pinned-view overlay and un-highlight the 🔔 button before rendering,
+  // otherwise the button stays amber and the chat area stays hidden behind it.
+  if ($('#pinnedView').classList.contains('show')) hidePinnedView();
   // Exit export mode when switching sessions
   if (exportMode) toggleExportMode();
   // Close in-page find when switching sessions (highlights belong to prior DOM)
@@ -2483,6 +2487,12 @@ $('#findInput').addEventListener('keydown', (e) => {
 
 // Global Cmd+F / Ctrl+F opens in-page find when a session is open
 document.addEventListener('keydown', (e) => {
+  // Esc closes the pinned view (mirrors the 「关闭」button / clicking a session)
+  if (e.key === 'Escape' && $('#pinnedView').classList.contains('show')) {
+    e.preventDefault();
+    hidePinnedView();
+    return;
+  }
   const isFind = (e.metaKey || e.ctrlKey) && (e.key === 'f' || e.key === 'F');
   if (!isFind) return;
   if ($('#mainHeader').style.display === 'none') return; // no session loaded
