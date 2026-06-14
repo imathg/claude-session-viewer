@@ -778,11 +778,15 @@ class SessionHandler(SimpleHTTPRequestHandler):
                         continue
 
                     if msg_type == "system":
+                        # compact_boundary markers ("Conversation compacted") store
+                        # their text at the top level, not under message.content.
+                        sys_content = obj.get("message", {}).get("content", "") or obj.get("content", "")
                         messages.append({
                             "type": "system",
-                            "content": obj.get("message", {}).get("content", ""),
+                            "content": sys_content,
                             "uuid": obj.get("uuid", ""),
                             "timestamp": obj.get("timestamp", ""),
+                            "subtype": obj.get("subtype", ""),
                         })
                         continue
 
@@ -831,6 +835,12 @@ class SessionHandler(SimpleHTTPRequestHandler):
                                 "uuid": obj.get("uuid", ""),
                                 "timestamp": obj.get("timestamp", ""),
                                 "model": obj.get("message", {}).get("model", ""),
+                                # Claude Code injects the post-/compact summary as a
+                                # role:user message ("This session is being continued
+                                # from a previous conversation..."). Flag it so the UI
+                                # can exclude it from "only my input" exports — it's
+                                # generated, not actually typed by the user.
+                                "isCompactSummary": bool(obj.get("isCompactSummary", False)),
                             })
         except Exception as e:
             return {"error": str(e)}
@@ -1039,7 +1049,12 @@ def open_browser(port):
 
 
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else find_free_port(PORT)
+    if len(sys.argv) > 1:
+        port = int(sys.argv[1])
+    elif os.environ.get("PORT"):
+        port = int(os.environ["PORT"])
+    else:
+        port = find_free_port(PORT)
     server = HTTPServer(("127.0.0.1", port), SessionHandler)
     claude_dir = get_claude_dir()
     if claude_dir:

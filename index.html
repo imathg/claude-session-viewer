@@ -238,6 +238,10 @@ body {
 
 .msg-label.user-label { color: #c084fc; text-align: right; padding-right: 4px; }
 .msg-label.assistant-label { color: var(--accent2); }
+/* compact summary = Claude Code's /compact artifact, stored as a user message.
+   De-emphasise it so it's distinguishable from real input at a glance. */
+.user-wrapper.compact-summary .msg-label.user-label { color: var(--text-dim); }
+.user-wrapper.compact-summary .msg-bubble { opacity: 0.65; font-size: 13px; }
 
 .msg-bubble {
   padding: 12px 16px;
@@ -1266,6 +1270,7 @@ body {
       <button class="btn secondary" onclick="selectAllMessages()">全选</button>
       <button class="btn secondary" onclick="selectNoneMessages()">取消全选</button>
       <button class="btn secondary" onclick="selectConversationOnly()">仅对话</button>
+      <button class="btn secondary" onclick="selectMyInputOnly()" title="只选你输入的消息，排除 Claude 回复、工具结果与 compact 压缩摘要">仅我的输入</button>
       <span class="selection-info" id="selectionInfo">已选 0 条</span>
       <button class="btn nav-btn" id="selPrevBtn" onclick="navSelected(-1)" title="上一条已选" disabled>◀</button>
       <button class="btn nav-btn" id="selNextBtn" onclick="navSelected(1)" title="下一条已选" disabled>▶</button>
@@ -1450,10 +1455,28 @@ function selectConversationOnly() {
     const idx = parseInt(cb.dataset.groupIdx);
     const group = currentRenderedGroups[idx];
     if (!group) { cb.checked = false; return; }
-    const hasConversation = group.role === 'user' || (group.role === 'assistant' && group.parts.some(p => p.type === 'text' && p.text.trim()));
+    // Skip compact-summary blocks — they're Claude Code's compaction artifact,
+    // not part of the real conversation.
+    const hasConversation = !group.isCompactSummary &&
+      (group.role === 'user' || (group.role === 'assistant' && group.parts.some(p => p.type === 'text' && p.text.trim())));
     cb.checked = hasConversation;
     const wrapper = cb.closest('.message-wrapper');
     if (wrapper) wrapper.classList.toggle('selected-for-export', hasConversation);
+  });
+  updateSelectionInfo();
+}
+
+// Select only the messages you actually typed — excludes Claude's replies, tool
+// results, system markers, and the compact summary Claude Code injects after a
+// /compact (stored as a role:user message, but generated rather than typed).
+function selectMyInputOnly() {
+  $$('.msg-checkbox').forEach(cb => {
+    const idx = parseInt(cb.dataset.groupIdx);
+    const group = currentRenderedGroups[idx];
+    const isMyInput = !!group && group.role === 'user' && !group.isCompactSummary;
+    cb.checked = isMyInput;
+    const wrapper = cb.closest('.message-wrapper');
+    if (wrapper) wrapper.classList.toggle('selected-for-export', isMyInput);
   });
   updateSelectionInfo();
 }
@@ -2310,15 +2333,17 @@ function renderMessages(container, messages) {
       } else if (hasText) {
         const groupIdx = currentRenderedGroups.length;
         const text = msg.parts.filter(p => p.type === 'text').map(p => p.text).join('\n');
-        currentRenderedGroups.push({ role: 'user', parts: msg.parts, text, timestamp: msg.timestamp });
+        const isCompactSummary = !!msg.isCompactSummary;
+        currentRenderedGroups.push({ role: 'user', parts: msg.parts, text, timestamp: msg.timestamp, isCompactSummary });
 
         const wrapper = document.createElement('div');
-        wrapper.className = 'message-wrapper user-wrapper';
+        wrapper.className = 'message-wrapper user-wrapper' + (isCompactSummary ? ' compact-summary' : '');
         if (msg.uuid) wrapper.dataset.uuids = msg.uuid;
+        const userLabel = isCompactSummary ? '📦 压缩摘要 · Claude Code' : 'You';
         wrapper.innerHTML = `
           <input type="checkbox" class="msg-checkbox" data-group-idx="${groupIdx}" onchange="onCheckboxChange(this)">
           <div class="message-inner message user" data-group-idx="${groupIdx}">
-            <div class="msg-label user-label">You</div>
+            <div class="msg-label user-label">${userLabel}</div>
             <div class="msg-bubble">${escapeHtml(text)}</div>
             <div class="msg-actions">
               <button class="btn-small" onclick="copyMessageText(${groupIdx}, this)">复制</button>
