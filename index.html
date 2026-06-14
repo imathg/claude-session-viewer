@@ -296,6 +296,22 @@ body {
 .btn-small:hover { background: rgba(255,255,255,0.12); color: var(--text); }
 .btn-small.copied { color: #4ade80; border-color: rgba(34,197,94,0.4); }
 
+/* Per-session pin navigator — jump between 📌 anchors, in or out of export mode */
+.pin-nav { display: inline-flex; align-items: center; gap: 6px; }
+.pin-nav-label { font-size: 11px; font-weight: 600; color: #f59e0b; white-space: nowrap; }
+.pin-nav-btn {
+  background: rgba(245,158,11,0.10);
+  border: 1px solid rgba(245,158,11,0.35);
+  color: #f59e0b;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.pin-nav-btn:hover { background: rgba(245,158,11,0.22); }
+
 /* Checkbox for export selection */
 .msg-checkbox {
   display: none;
@@ -352,6 +368,17 @@ body {
 .export-toolbar .btn.secondary:hover { background: rgba(255,255,255,0.05); }
 
 .export-toolbar .btn.export-btn { background: #16a34a; }
+
+.export-toolbar .btn.nav-btn {
+  padding: 6px 11px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1;
+}
+.export-toolbar .btn.nav-btn:hover:not(:disabled) { background: rgba(255,255,255,0.05); }
+.export-toolbar .btn.nav-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .export-toolbar .selection-info {
   font-size: 12px;
@@ -516,6 +543,30 @@ body {
   background: none;
   padding: 0;
 }
+
+/* Rendered markdown (assistant bubbles) */
+.msg-bubble.markdown-body { white-space: normal; }
+.msg-bubble.markdown-body > :first-child { margin-top: 0; }
+.msg-bubble.markdown-body > :last-child { margin-bottom: 0; }
+.msg-bubble p { margin: 0 0 10px; }
+.msg-bubble h1, .msg-bubble h2, .msg-bubble h3,
+.msg-bubble h4, .msg-bubble h5, .msg-bubble h6 { margin: 14px 0 6px; line-height: 1.3; font-weight: 600; }
+.msg-bubble h1 { font-size: 19px; }
+.msg-bubble h2 { font-size: 17px; }
+.msg-bubble h3 { font-size: 15px; }
+.msg-bubble h4, .msg-bubble h5, .msg-bubble h6 { font-size: 14px; color: var(--text-dim); }
+.msg-bubble ul, .msg-bubble ol { margin: 6px 0 10px; padding-left: 22px; }
+.msg-bubble li { margin: 3px 0; }
+.msg-bubble li > ul, .msg-bubble li > ol { margin: 3px 0; }
+.msg-bubble blockquote { margin: 8px 0; padding: 2px 12px; border-left: 3px solid var(--border); color: var(--text-dim); }
+.msg-bubble a { color: var(--accent2); text-decoration: none; border-bottom: 1px solid rgba(255,255,255,0.15); }
+.msg-bubble a:hover { border-bottom-color: var(--accent2); }
+.msg-bubble hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+.msg-bubble del { opacity: 0.6; }
+.msg-bubble table { border-collapse: collapse; margin: 10px 0; font-size: 13px; display: block; max-width: 100%; overflow-x: auto; }
+.msg-bubble th, .msg-bubble td { border: 1px solid var(--border); padding: 6px 12px; text-align: left; }
+.msg-bubble th { background: rgba(255,255,255,0.04); font-weight: 600; }
+.msg-bubble tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 8px; }
@@ -1095,6 +1146,28 @@ body {
   100% { outline-color: transparent; box-shadow: none; }
 }
 
+/* Persistent pin anchor — stays after the jump flash fades, so the pin
+   location is still findable when you switch into export mode. */
+.message-wrapper.has-pin-anchor .message-inner {
+  box-shadow: inset 3px 0 0 rgba(245, 158, 11, 0.7);
+  border-radius: 12px;
+}
+.pin-anchor-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 600; color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 10px; padding: 1px 8px; margin-bottom: 6px;
+}
+
+/* Pin-page export button (sits next to 跳转) */
+.pinned-view .pv-export-btn {
+  background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+  padding: 4px 10px; font-size: 11px; border-radius: 6px; cursor: pointer; white-space: nowrap;
+}
+.pinned-view .pv-export-btn:hover { background: rgba(34, 197, 94, 0.15); color: #22c55e; border-color: #22c55e; }
+.pinned-view .pv-export-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* Scroll-to-top button */
 .scroll-top-btn {
   position: absolute;
@@ -1174,6 +1247,11 @@ body {
       <span class="session-title" id="sessionTitle"></span>
       <span class="msg-count" id="msgCount"></span>
       <span style="flex:1"></span>
+      <span class="pin-nav" id="pinNav" style="display:none">
+        <button class="pin-nav-btn" id="pinPrevBtn" onclick="navPins(-1)" title="上一条收藏">◀</button>
+        <span class="pin-nav-label" id="pinNavLabel">📌</span>
+        <button class="pin-nav-btn" id="pinNextBtn" onclick="navPins(1)" title="下一条收藏">▶</button>
+      </span>
       <button class="btn-small" id="toggleFindBtn" onclick="toggleFindBar()" title="页内搜索 (⌘F)">🔍 页内搜索</button>
       <button class="btn-small" id="toggleExportBtn" onclick="toggleExportMode()">导出模式</button>
     </div>
@@ -1189,6 +1267,8 @@ body {
       <button class="btn secondary" onclick="selectNoneMessages()">取消全选</button>
       <button class="btn secondary" onclick="selectConversationOnly()">仅对话</button>
       <span class="selection-info" id="selectionInfo">已选 0 条</span>
+      <button class="btn nav-btn" id="selPrevBtn" onclick="navSelected(-1)" title="上一条已选" disabled>◀</button>
+      <button class="btn nav-btn" id="selNextBtn" onclick="navSelected(1)" title="下一条已选" disabled>▶</button>
       <button class="btn export-btn" onclick="exportHtml()">导出 HTML</button>
       <button class="btn secondary" onclick="copySelectedPlainText()">复制纯文本</button>
     </div>
@@ -1225,6 +1305,10 @@ let exportMode = false;
 let allPins = [];             // list of pinned sessions returned by /api/pins
 let pinnedSessionPaths = new Set(); // sessionPath strings that have ≥1 pin (for sidebar badge)
 let pendingJumpUuid = null;   // when set, loadSession will scroll+flash this uuid after render
+let pendingExport = null;     // {uuid} → after the session loads, enter export mode + preselect pins
+let currentSessionPath = '';  // path of the session currently rendered (for pin-anchor lookup)
+let selNavIndex = -1;         // cursor for the ◀ ▶ review-selected navigator
+let pinNavIndex = -1;         // cursor for the header 📌 pin navigator
 
 // ── Toast ──
 function showToast(text) {
@@ -1253,7 +1337,7 @@ function copyMessageText(idx, btnEl) {
 }
 
 // ── Export mode ──
-function toggleExportMode() {
+function toggleExportMode(preselectUuids) {
   exportMode = !exportMode;
   const chat = $('#chatContainer');
   const btn = $('#toggleExportBtn');
@@ -1264,6 +1348,11 @@ function toggleExportMode() {
     btn.textContent = '退出导出';
     btn.classList.add('copied');
     toolbar.classList.add('show');
+    // If this session has pins, pre-select them and bring the first into view —
+    // so the pinned reply is never lost when entering export mode. When opened via
+    // a single pin's 导出 button, preselectUuids restricts this to just that pin.
+    const firstPin = preselectPinnedForExport(preselectUuids);
+    if (firstPin) firstPin.scrollIntoView({ block: 'center' });
   } else {
     chat.classList.remove('export-mode');
     btn.textContent = '导出模式';
@@ -1271,6 +1360,77 @@ function toggleExportMode() {
     toolbar.classList.remove('show');
   }
   updateSelectionInfo();
+}
+
+// Collect the message uuids pinned in the currently-loaded session.
+function pinUuidsForCurrentSession() {
+  const set = new Set();
+  for (const p of allPins) {
+    if (p.sessionPath !== currentSessionPath) continue;
+    for (const c of (p.chapters || [])) if (c.msgUuid) set.add(c.msgUuid);
+  }
+  return set;
+}
+
+// Mark pinned messages with a persistent 📌 anchor after a session renders.
+function markPinAnchorsForCurrentSession() {
+  const uuids = pinUuidsForCurrentSession();
+  if (!uuids.size) return;
+  $$('.message-wrapper').forEach(w => {
+    const wu = (w.dataset.uuids || '').split(' ');
+    if (!wu.some(u => uuids.has(u))) return;
+    if (w.classList.contains('has-pin-anchor')) return;
+    w.classList.add('has-pin-anchor');
+    const inner = w.querySelector('.message-inner');
+    if (inner && !inner.querySelector('.pin-anchor-badge')) {
+      const badge = document.createElement('div');
+      badge.className = 'pin-anchor-badge';
+      badge.textContent = '📌 已收藏';
+      inner.insertBefore(badge, inner.firstChild);
+    }
+  });
+}
+
+// Show/refresh the header pin navigator for the current session.
+function setupPinNav() {
+  pinNavIndex = -1;
+  const nav = $('#pinNav'), label = $('#pinNavLabel');
+  if (!nav) return;
+  const count = document.querySelectorAll('.message-wrapper.has-pin-anchor').length;
+  if (!count) { nav.style.display = 'none'; return; }
+  nav.style.display = 'inline-flex';
+  if (label) label.textContent = `📌 ${count} 条`;
+}
+
+// Jump to the previous/next pinned message in this session — works any time,
+// not just in export mode, so you can hop between 📌 anchors while reading.
+function navPins(dir) {
+  const wrappers = Array.from(document.querySelectorAll('.message-wrapper.has-pin-anchor'));
+  if (!wrappers.length) return;
+  pinNavIndex = (pinNavIndex + dir + wrappers.length) % wrappers.length;
+  flashWrapper(wrappers[pinNavIndex]);
+  const label = $('#pinNavLabel');
+  if (label) label.textContent = `📌 ${pinNavIndex + 1}/${wrappers.length}`;
+}
+
+// Check + highlight pinned messages for export; returns the first matched wrapper.
+function preselectPinnedForExport(onlyUuids) {
+  let uuids = pinUuidsForCurrentSession();
+  // When a single pin's 导出 button was used, restrict the pre-selection to it —
+  // don't silently check the session's other (off-screen) pins.
+  if (onlyUuids) uuids = new Set([...uuids].filter(u => onlyUuids.has(u)));
+  if (!uuids.size) return null;
+  let first = null;
+  $$('.message-wrapper').forEach(w => {
+    const wu = (w.dataset.uuids || '').split(' ');
+    if (!wu.some(u => uuids.has(u))) return;
+    const cb = w.querySelector('.msg-checkbox');
+    if (cb) cb.checked = true;
+    w.classList.add('selected-for-export');
+    if (!first) first = w;
+  });
+  updateSelectionInfo();
+  return first;
 }
 
 function selectAllMessages() {
@@ -1308,6 +1468,24 @@ function updateSelectionInfo() {
   const checked = $$('.msg-checkbox:checked').length;
   const info = $('#selectionInfo');
   if (info) info.textContent = `已选 ${checked} 条`;
+  // Selection changed → reset the review cursor and refresh the ◀ ▶ nav buttons.
+  selNavIndex = -1;
+  const prev = $('#selPrevBtn'), next = $('#selNextBtn');
+  if (prev) prev.disabled = checked === 0;
+  if (next) next.disabled = checked === 0;
+}
+
+// Step through the currently-selected messages so you can review exactly what will
+// be exported before downloading — in a long session they're otherwise invisible.
+function navSelected(dir) {
+  const wrappers = Array.from($$('.msg-checkbox:checked'))
+    .map(cb => cb.closest('.message-wrapper'))
+    .filter(Boolean); // querySelectorAll preserves document order
+  if (!wrappers.length) return;
+  selNavIndex = (selNavIndex + dir + wrappers.length) % wrappers.length;
+  flashWrapper(wrappers[selNavIndex]);
+  const info = $('#selectionInfo');
+  if (info) info.textContent = `已选 ${wrappers.length} 条 · 第 ${selNavIndex + 1}/${wrappers.length}`;
 }
 
 // ── Export ──
@@ -1349,7 +1527,7 @@ function groupToHtmlBlock(group, idx) {
     let plainParts = [];
     for (const part of group.parts) {
       if (part.type === 'text' && part.text.trim()) {
-        inner += `<div class="bubble assistant-bubble">${renderMarkdownForExport(part.text)}</div>`;
+        inner += `<div class="bubble assistant-bubble markdown-body">${renderMarkdownForExport(part.text)}</div>`;
         plainParts.push(part.text.trim());
       } else if (part.type === 'tool_use') {
         const summary = summarizeToolInput(part.name, part.input);
@@ -1373,16 +1551,8 @@ function escapeAttr(text) {
 }
 
 function renderMarkdownForExport(text) {
-  let html = escapeHtml(text);
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-  // Preserve newlines
-  html = html.replace(/\n/g, '<br>');
-  return html;
+  // Export and the in-app view share one renderer so they stay consistent.
+  return renderMarkdown(text);
 }
 
 function buildExportHtml(groups) {
@@ -1425,6 +1595,27 @@ body {
 code { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: 13px; }
 pre { background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; }
 pre code { background: none; padding: 0; }
+.assistant-bubble.markdown-body { white-space: normal; }
+.markdown-body > :first-child { margin-top: 0; }
+.markdown-body > :last-child { margin-bottom: 0; }
+.markdown-body p { margin: 0 0 10px; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3,
+.markdown-body h4, .markdown-body h5, .markdown-body h6 { margin: 14px 0 6px; line-height: 1.3; font-weight: 600; color: #f1f5f9; }
+.markdown-body h1 { font-size: 19px; }
+.markdown-body h2 { font-size: 17px; }
+.markdown-body h3 { font-size: 15px; }
+.markdown-body h4, .markdown-body h5, .markdown-body h6 { font-size: 14px; color: #94a3b8; }
+.markdown-body ul, .markdown-body ol { margin: 6px 0 10px; padding-left: 22px; }
+.markdown-body li { margin: 3px 0; }
+.markdown-body li > ul, .markdown-body li > ol { margin: 3px 0; }
+.markdown-body blockquote { margin: 8px 0; padding: 2px 12px; border-left: 3px solid #334155; color: #94a3b8; }
+.markdown-body a { color: #38bdf8; text-decoration: none; border-bottom: 1px solid rgba(56,189,248,0.3); }
+.markdown-body hr { border: none; border-top: 1px solid #334155; margin: 14px 0; }
+.markdown-body del { opacity: 0.6; }
+.markdown-body table { border-collapse: collapse; margin: 10px 0; font-size: 13px; display: block; max-width: 100%; overflow-x: auto; }
+.markdown-body th, .markdown-body td { border: 1px solid #334155; padding: 6px 12px; text-align: left; }
+.markdown-body th { background: rgba(255,255,255,0.05); font-weight: 600; color: #f1f5f9; }
+.markdown-body tbody tr:nth-child(even) { background: rgba(255,255,255,0.025); }
 h1 { font-size: 18px; margin: 12px 0 4px; }
 h2 { font-size: 16px; margin: 10px 0 4px; }
 h3 { font-size: 15px; margin: 8px 0 4px; }
@@ -1619,6 +1810,7 @@ function renderPinnedView() {
           <span class="pv-chapter-icon">🔔</span>
           <span class="pv-chapter-title" title="${escapeAttr(c.title || '(无标题)')}">${escapeHtml(c.title || '(无标题)')}</span>
           <button class="pv-jump-btn" data-path="${escapeAttr(p.sessionPath)}" data-uuid="${escapeAttr(c.msgUuid || '')}" ${jumpDisabled ? 'disabled' : ''} title="${jumpDisabled ? '该消息无法定位（会话未同步或锚点丢失）' : '跳转到该消息'}">跳转</button>
+          <button class="pv-export-btn" data-path="${escapeAttr(p.sessionPath)}" data-uuid="${escapeAttr(c.msgUuid || '')}" ${hasSession ? '' : 'disabled'} title="${hasSession ? '在导出模式中打开并预选这条 pin' : '会话尚未同步到磁盘，无法导出'}">导出</button>
         </div>
       `;
     }
@@ -1629,6 +1821,10 @@ function renderPinnedView() {
     card.querySelectorAll('.pv-jump-btn').forEach(btn => {
       if (btn.disabled) return;
       btn.addEventListener('click', () => jumpToSession(btn.dataset.path, btn.dataset.uuid));
+    });
+    card.querySelectorAll('.pv-export-btn').forEach(btn => {
+      if (btn.disabled) return;
+      btn.addEventListener('click', () => exportPin(btn.dataset.path, btn.dataset.uuid));
     });
     body.appendChild(card);
   }
@@ -1649,6 +1845,17 @@ async function jumpToSession(sessionPath, msgUuid) {
   }
   // Otherwise call loadSession directly. We don't know all metadata; loadSession will
   // re-read what it needs from /api/session, but we need basic fields for the header.
+  await loadSession({ path: sessionPath, id: '', customTitle: '', firstMessage: '', slug: '' });
+}
+
+// Open a pinned session straight into export mode, with the pin pre-selected,
+// highlighted and scrolled into view (jump + export are one cohesive flow).
+async function exportPin(sessionPath, msgUuid) {
+  if (!sessionPath) return;
+  hidePinnedView();
+  pendingExport = { uuid: msgUuid || null };
+  const existing = document.querySelector(`.session-item[data-path="${cssEscape(sessionPath)}"]`);
+  if (existing) { existing.click(); return; }
   await loadSession({ path: sessionPath, id: '', customTitle: '', firstMessage: '', slug: '' });
 }
 
@@ -2010,6 +2217,7 @@ async function loadSession(session) {
   }
 
   currentMessages = data.messages;
+  currentSessionPath = session.path;
   const customTitle = data.metadata?.title || session.customTitle || '';
   const slug = session.slug || '';
   // When loaded via jump-to-pin / session-id lookup, session.id may be empty.
@@ -2038,8 +2246,22 @@ async function loadSession(session) {
   chat.innerHTML = '';
   currentRenderedGroups = [];
   renderMessages(chat, data.messages);
-  // Scroll to bottom to show latest progress (unless we're about to jump to a pin)
-  if (pendingJumpUuid) {
+  // Leave a persistent 📌 marker on any pinned messages in this session.
+  markPinAnchorsForCurrentSession();
+  // Refresh the header 📌 navigator (hidden when this session has no pins).
+  setupPinNav();
+  // Scroll behaviour: export-from-pin > jump-to-pin > bottom (latest progress).
+  if (pendingExport) {
+    const target = pendingExport.uuid;
+    pendingExport = null;
+    const only = target ? new Set([target]) : undefined;
+    setTimeout(() => {
+      // Select ONLY the pin whose 导出 button was clicked — not every pin in the session.
+      if (!exportMode) toggleExportMode(only);
+      else preselectPinnedForExport(only);
+      if (target) flashMessageByUuid(target); // then scroll+flash the specific pin (wins)
+    }, 0);
+  } else if (pendingJumpUuid) {
     const target = pendingJumpUuid;
     pendingJumpUuid = null;
     // Defer one task so layout settles, then scroll+flash.
@@ -2050,16 +2272,22 @@ async function loadSession(session) {
   }
 }
 
+function flashWrapper(el) {
+  if (!el) return;
+  // Instant (not smooth): in long sessions the target can be 100k+ px away, where
+  // smooth scrolling silently no-ops. The flash animation supplies the cue.
+  el.scrollIntoView({ block: 'center' });
+  el.classList.remove('pin-flash');
+  void el.offsetWidth; // force reflow so the animation restarts on repeat jumps
+  el.classList.add('pin-flash');
+  setTimeout(() => el.classList.remove('pin-flash'), 2500);
+}
+
 function flashMessageByUuid(uuid) {
   if (!uuid) return;
   const el = document.querySelector(`.message-wrapper[data-uuids~="${cssEscape(uuid)}"]`);
   if (!el) { showToast('未找到对应消息（可能已被剪枝）'); return; }
-  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  el.classList.remove('pin-flash');
-  // Force reflow so the animation restarts when jumping repeatedly
-  void el.offsetWidth;
-  el.classList.add('pin-flash');
-  setTimeout(() => el.classList.remove('pin-flash'), 2500);
+  flashWrapper(el);
 }
 
 function renderMessages(container, messages) {
@@ -2118,7 +2346,7 @@ function renderMessages(container, messages) {
 
       for (const part of parts) {
         if (part.type === 'text' && part.text.trim()) {
-          innerHtml += `<div class="msg-bubble">${renderMarkdown(part.text)}</div>`;
+          innerHtml += `<div class="msg-bubble markdown-body">${renderMarkdown(part.text)}</div>`;
         } else if (part.type === 'thinking' && part.text.trim()) {
           const id = 'think-' + Math.random().toString(36).substr(2, 8);
           const preview = part.text.substring(0, 80).replace(/\n/g, ' ');
@@ -2224,14 +2452,171 @@ function summarizeToolInput(name, input) {
   return '';
 }
 
+// ── Markdown rendering (shared by the in-app view and the HTML export) ──
+// A small, dependency-free block-level renderer: headers, GFM tables, lists,
+// blockquotes, fenced code, horizontal rules and inline emphasis/links/code.
+function mdInline(s) {
+  if (s == null) return '';
+  // Protect inline code spans so their contents aren't processed further.
+  const codes = [];
+  s = String(s).replace(/`([^`]+)`/g, (m, c) => { codes.push(c); return ' C' + (codes.length - 1) + ' '; });
+  s = escapeHtml(s);
+  // Links: [text](url) — only allow safe schemes.
+  s = s.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (m, t, url) => {
+    const safe = /^(https?:|mailto:|tel:|#|\/)/i.test(url) ? url : '#';
+    return `<a href="${safe}" target="_blank" rel="noopener noreferrer">${t}</a>`;
+  });
+  s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/~~(.+?)~~/g, '<del>$1</del>');
+  // Italic with single * (no _ to avoid breaking snake_case identifiers).
+  s = s.replace(/\*([^\s*][^*\n]*?)\*/g, '<em>$1</em>');
+  s = s.replace(/ C(\d+) /g, (m, i) => `<code>${escapeHtml(codes[+i])}</code>`);
+  return s;
+}
+
+function mdSplitRow(row) {
+  let r = row.trim().replace(/^\|/, '').replace(/\|$/, '');
+  const cells = [];
+  let cur = '';
+  for (let k = 0; k < r.length; k++) {
+    if (r[k] === '\\' && r[k + 1] === '|') { cur += '|'; k++; continue; }
+    if (r[k] === '|') { cells.push(cur); cur = ''; continue; }
+    cur += r[k];
+  }
+  cells.push(cur);
+  return cells;
+}
+
+function mdIsTableStart(lines, i) {
+  const sep = lines[i + 1];
+  return sep != null
+    && lines[i].includes('|')
+    && sep.includes('|')
+    && /-/.test(sep)
+    && /^[\s|:-]+$/.test(sep);
+}
+
+function mdParseList(lines, start) {
+  const first = lines[start].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+  const baseIndent = first[1].length;
+  const ordered = /\d/.test(first[2]);
+  let i = start;
+  let items = '';
+  while (i < lines.length) {
+    const m = lines[i].match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+    if (!m) {
+      // Allow a single blank line inside a loose list, but only if the next
+      // item is the same kind (so an ordered list after a bulleted one starts fresh).
+      if (lines[i].trim() === '' && i + 1 < lines.length) {
+        const nm = lines[i + 1].match(/^(\s*)([-*+]|\d+[.)])\s+/);
+        if (nm && nm[1].length >= baseIndent && /\d/.test(nm[2]) === ordered) { i++; continue; }
+      }
+      break;
+    }
+    const indent = m[1].length;
+    if (indent < baseIndent) break;
+    if (indent > baseIndent) {
+      const [child, ni] = mdParseList(lines, i);
+      items = items.endsWith('</li>') ? items.slice(0, -5) + child + '</li>' : items + child;
+      i = ni;
+      continue;
+    }
+    if (/\d/.test(m[2]) !== ordered) break; // list type switched at the same level → new list
+    items += `<li>${mdInline(m[3])}</li>`;
+    i++;
+  }
+  return [(ordered ? '<ol>' : '<ul>') + items + (ordered ? '</ol>' : '</ul>'), i];
+}
+
 function renderMarkdown(text) {
-  let html = escapeHtml(text);
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/^### (.+)$/gm, '<strong style="font-size:15px">$1</strong>');
-  html = html.replace(/^## (.+)$/gm, '<strong style="font-size:16px">$1</strong>');
-  html = html.replace(/^# (.+)$/gm, '<strong style="font-size:18px">$1</strong>');
+  if (!text) return '';
+  const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
+  const isBoundary = (ln, idx) =>
+    ln.trim() === ''
+    || /^\s*(`{3,}|~{3,})/.test(ln)
+    || /^\s*#{1,6}\s/.test(ln)
+    || /^\s*>\s?/.test(ln)
+    || /^\s*([-*+]|\d+[.)])\s+/.test(ln)
+    || /^\s*([-*_])(\s*\1){2,}\s*$/.test(ln)
+    || mdIsTableStart(lines, idx);
+
+  let html = '';
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Fenced code block
+    const fence = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      const ticks = fence[1][0];
+      const lang = fence[2].trim().split(/\s+/)[0];
+      const closeRe = new RegExp('^\\s*' + (ticks === '`' ? '`' : '~') + '{3,}\\s*$');
+      const buf = [];
+      i++;
+      while (i < lines.length && !closeRe.test(lines[i])) { buf.push(lines[i]); i++; }
+      i++; // skip closing fence
+      html += `<pre><code${lang ? ` class="language-${escapeAttr(lang)}"` : ''}>${escapeHtml(buf.join('\n'))}</code></pre>`;
+      continue;
+    }
+
+    if (line.trim() === '') { i++; continue; }
+
+    // Horizontal rule
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { html += '<hr>'; i++; continue; }
+
+    // ATX header
+    const h = line.match(/^\s*(#{1,6})\s+(.*?)\s*#*\s*$/);
+    if (h) { const lvl = h[1].length; html += `<h${lvl}>${mdInline(h[2])}</h${lvl}>`; i++; continue; }
+
+    // GFM table
+    if (mdIsTableStart(lines, i)) {
+      const header = mdSplitRow(lines[i]);
+      const aligns = mdSplitRow(lines[i + 1]).map(c => {
+        const t = c.trim(); const l = t.startsWith(':'), r = t.endsWith(':');
+        return (l && r) ? 'center' : r ? 'right' : l ? 'left' : '';
+      });
+      i += 2;
+      let rows = '';
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== '') {
+        const cells = mdSplitRow(lines[i]);
+        rows += '<tr>';
+        for (let c = 0; c < header.length; c++) {
+          const a = aligns[c] ? ` style="text-align:${aligns[c]}"` : '';
+          rows += `<td${a}>${mdInline((cells[c] || '').trim())}</td>`;
+        }
+        rows += '</tr>';
+        i++;
+      }
+      let thead = '<tr>';
+      header.forEach((c, idx) => {
+        const a = aligns[idx] ? ` style="text-align:${aligns[idx]}"` : '';
+        thead += `<th${a}>${mdInline(c.trim())}</th>`;
+      });
+      thead += '</tr>';
+      html += `<table><thead>${thead}</thead><tbody>${rows}</tbody></table>`;
+      continue;
+    }
+
+    // Blockquote
+    if (/^\s*>\s?/.test(line)) {
+      const buf = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) { buf.push(lines[i].replace(/^\s*>\s?/, '')); i++; }
+      html += `<blockquote>${renderMarkdown(buf.join('\n'))}</blockquote>`;
+      continue;
+    }
+
+    // Lists
+    if (/^\s*([-*+]|\d+[.)])\s+/.test(line)) {
+      const [listHtml, ni] = mdParseList(lines, i);
+      html += listHtml; i = ni; continue;
+    }
+
+    // Paragraph
+    const buf = [line]; i++;
+    while (i < lines.length && !isBoundary(lines[i], i)) { buf.push(lines[i]); i++; }
+    html += `<p>${mdInline(buf.join('\n')).replace(/\n/g, '<br>')}</p>`;
+  }
   return html;
 }
 
