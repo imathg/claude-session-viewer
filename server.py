@@ -557,6 +557,14 @@ class SessionHandler(SimpleHTTPRequestHandler):
           - "msg_<id>-tN"  → matches obj.message.id (strip -tN suffix)
           - "toolu_<id>"   → matches a tool_use part's id within an assistant message
         For msg_*, prefer the LAST line with that message.id (final text chunk).
+
+        Claude desktop frequently anchors a pinned chapter to an *intermediate*
+        message of an assistant turn — a tool_use it happened to be issuing when
+        the chapter was created. The user, though, thinks of the pin as marking
+        the *answer*. So once the raw anchor is found we advance it to that turn's
+        main text answer: the largest assistant text block at or after the anchor,
+        up to the next real user input. If the turn has no text answer at all
+        (e.g. the user interrupted mid-tool), we keep the raw anchor.
         """
         # Pre-compute the "msg base" forms we care about
         msg_bases = {}  # base_id → afterId (preserves the -tN suffix the caller asked for)
@@ -577,7 +585,10 @@ class SessionHandler(SimpleHTTPRequestHandler):
             else:
                 other_ids[a] = a
 
-        mapping = {}
+        # raw anchor: afterId → uuid of the JSONL line it literally points at
+        anchor = {}
+        # ordered per-line records, so we can walk a turn forward from an anchor
+        seq = []  # [{uuid, role, text_len, user_input}]
         try:
             with open(jsonl_path, "r") as f:
                 for line in f:
@@ -585,26 +596,67 @@ class SessionHandler(SimpleHTTPRequestHandler):
                         obj = json.loads(line)
                     except Exception:
                         continue
-                    if obj.get("type") != "assistant":
-                        continue
-                    msg = obj.get("message", {}) or {}
-                    mid = msg.get("id", "")
+                    typ = obj.get("type")
                     uuid = obj.get("uuid", "")
-                    if mid and mid in msg_bases and uuid:
-                        # Take the LAST line with this id (overwrite)
-                        mapping[msg_bases[mid]] = uuid
+                    msg = obj.get("message", {}) or {}
                     content = msg.get("content", [])
-                    if isinstance(content, list):
-                        for c in content:
-                            if not isinstance(c, dict):
-                                continue
-                            cid = c.get("id", "")
-                            if cid and cid in toolu_ids and uuid:
-                                mapping[toolu_ids[cid]] = uuid
-                            elif cid and cid in other_ids and uuid:
-                                mapping[other_ids[cid]] = uuid
+                    text_len = 0
+                    user_input = False
+                    if typ == "assistant":
+                        mid = msg.get("id", "")
+                        if mid and mid in msg_bases and uuid:
+                            # Take the LAST line with this id (overwrite)
+                            anchor[msg_bases[mid]] = uuid
+                        if isinstance(content, list):
+                            for c in content:
+                                if not isinstance(c, dict):
+                                    continue
+                                if c.get("type") == "text":
+                                    text_len += len(c.get("text", "") or "")
+                                cid = c.get("id", "")
+                                if cid and cid in toolu_ids and uuid:
+                                    anchor[toolu_ids[cid]] = uuid
+                                elif cid and cid in other_ids and uuid:
+                                    anchor[other_ids[cid]] = uuid
+                        elif isinstance(content, str):
+                            text_len = len(content)
+                    elif typ == "user":
+                        # A real, typed user message ends the assistant's turn;
+                        # tool_result-only user messages do not.
+                        if isinstance(content, str):
+                            user_input = bool(content.strip())
+                        elif isinstance(content, list):
+                            user_input = any(
+                                isinstance(c, dict) and c.get("type") == "text"
+                                and (c.get("text", "") or "").strip()
+                                for c in content
+                            )
+                    seq.append({"uuid": uuid, "role": typ,
+                                "text_len": text_len, "user_input": user_input})
         except Exception:
             pass
+
+        idx_by_uuid = {}
+        for i, r in enumerate(seq):
+            if r["uuid"] and r["uuid"] not in idx_by_uuid:
+                idx_by_uuid[r["uuid"]] = i
+
+        mapping = {}
+        for after, auuid in anchor.items():
+            i = idx_by_uuid.get(auuid)
+            if i is None:
+                mapping[after] = auuid
+                continue
+            best_i, best_len = None, 0
+            j = i
+            while j < len(seq):
+                r = seq[j]
+                if j > i and r["role"] == "user" and r["user_input"]:
+                    break
+                if r["role"] == "assistant" and r["text_len"] > best_len:
+                    best_i, best_len = j, r["text_len"]
+                j += 1
+            mapping[after] = seq[best_i]["uuid"] if best_i is not None else auuid
         return mapping
 
     @staticmethod
