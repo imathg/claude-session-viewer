@@ -1269,7 +1269,8 @@ body {
     <div class="export-toolbar" id="exportToolbar">
       <button class="btn secondary" onclick="selectAllMessages()">全选</button>
       <button class="btn secondary" onclick="selectNoneMessages()">取消全选</button>
-      <button class="btn secondary" onclick="selectConversationOnly()">仅对话</button>
+      <button class="btn secondary" onclick="selectConversationOnly()" title="我的提问 + Claude 每一条文字回复（含「我先看看 X」这类过程叙述），跳过工具调用、工具结果与 compact 压缩摘要">对话·全程</button>
+      <button class="btn secondary" onclick="selectQnA()" title="我的提问 + 每轮 Claude 最后一条文字回复，跳过中间的工具调用、过程回复、工具结果与 compact 压缩摘要">对话·终答</button>
       <button class="btn secondary" onclick="selectMyInputOnly()" title="只选你输入的消息，排除 Claude 回复、工具结果与 compact 压缩摘要">仅我的输入</button>
       <span class="selection-info" id="selectionInfo">已选 0 条</span>
       <button class="btn nav-btn" id="selPrevBtn" onclick="navSelected(-1)" title="上一条已选" disabled>◀</button>
@@ -1455,9 +1456,10 @@ function selectConversationOnly() {
     const idx = parseInt(cb.dataset.groupIdx);
     const group = currentRenderedGroups[idx];
     if (!group) { cb.checked = false; return; }
-    // Skip compact-summary blocks — they're Claude Code's compaction artifact,
-    // not part of the real conversation.
-    const hasConversation = !group.isCompactSummary &&
+    // Skip compact-summary blocks (Claude Code's compaction artifact) and the
+    // "[Request interrupted by user]" marker (a synthetic message, not something
+    // you typed) — neither is part of the real conversation.
+    const hasConversation = !group.isCompactSummary && !isInterruptMarker(group) &&
       (group.role === 'user' || (group.role === 'assistant' && group.parts.some(p => p.type === 'text' && p.text.trim())));
     cb.checked = hasConversation;
     const wrapper = cb.closest('.message-wrapper');
@@ -1477,6 +1479,69 @@ function selectMyInputOnly() {
     cb.checked = isMyInput;
     const wrapper = cb.closest('.message-wrapper');
     if (wrapper) wrapper.classList.toggle('selected-for-export', isMyInput);
+  });
+  updateSelectionInfo();
+}
+
+// A turn doesn't always end with Claude finishing — sometimes you interrupt it.
+// Claude Code records that as a synthetic user message ("[Request interrupted by
+// user]" or "...for tool use"), stored as a content list so it slips past the
+// server's string-only meta filter and lands here as a role:user group. It isn't
+// something you typed, and it means the turn never produced a real final answer.
+function isInterruptMarker(group) {
+  return !!group && group.role === 'user' &&
+    /^\[Request interrupted by user/.test((group.text || '').trim());
+}
+
+// Export the conversation as clean Q&A: every message you typed, plus the FINAL
+// text answer of each turn (the last Claude text block before your next message).
+// Drops intermediate tool-call replies, process narration, tool results, system
+// markers and compact summaries — so you keep just your questions and Claude's
+// conclusions. This is the whole-session form of the pin logic: a pin marks one
+// question + its final answer; this keeps every such Q&A pair.
+//
+// Exception: a turn you *interrupted* has no final answer — you cut it off
+// precisely because you'd read the intermediate replies. So for an interrupted
+// turn we keep ALL of Claude's text replies, not just the last one, and we drop
+// the "[Request interrupted by user]" marker itself (it's noise, not a question).
+function selectQnA() {
+  // Walk groups in document order. A real (typed) user message starts a new turn;
+  // within each turn we collect every assistant group that actually has text.
+  const keep = new Set();
+  let assistantTexts = [];  // assistant-with-text group indices in the current turn
+  let interrupted = false;  // did this turn end with you interrupting Claude?
+  const flush = () => {
+    if (assistantTexts.length) {
+      if (interrupted) assistantTexts.forEach(i => keep.add(i)); // no final answer → keep them all
+      else keep.add(assistantTexts[assistantTexts.length - 1]);  // normal turn → just the final answer
+    }
+    assistantTexts = [];
+    interrupted = false;
+  };
+  currentRenderedGroups.forEach((group, idx) => {
+    if (!group) return;
+    if (isInterruptMarker(group)) {
+      interrupted = true; // flag the turn, but don't keep the marker or open a new turn
+      return;
+    }
+    if (group.role === 'user' && !group.isCompactSummary) {
+      flush();        // settle the previous turn
+      keep.add(idx);  // keep your question
+      return;
+    }
+    if (group.role === 'assistant' && !group.isCompactSummary &&
+        group.parts.some(p => p.type === 'text' && p.text.trim())) {
+      assistantTexts.push(idx);
+    }
+  });
+  flush(); // settle the final turn
+
+  $$('.msg-checkbox').forEach(cb => {
+    const idx = parseInt(cb.dataset.groupIdx);
+    const sel = keep.has(idx);
+    cb.checked = sel;
+    const wrapper = cb.closest('.message-wrapper');
+    if (wrapper) wrapper.classList.toggle('selected-for-export', sel);
   });
   updateSelectionInfo();
 }
